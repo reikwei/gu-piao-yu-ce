@@ -1,0 +1,24 @@
+# Python virtualenv and local env
+.venv/
+.env
+.env.*
+.github/deploy-memory.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local data and SQLite cache
+data/
+*.db
+deploy-upload.tgz
+
+# OS and editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Important note:
+# Do NOT ignore .github/, because GitHub Actions workflows must be committed.

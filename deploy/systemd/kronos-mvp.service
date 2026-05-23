@@ -1,0 +1,15 @@
+[Unit]
+Description=Kronos A-share Prediction API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/yupiaoyuce
+EnvironmentFile=/home/yupiaoyuce/.env
+ExecStart=/home/yupiaoyuce/.venv/bin/python -m kronos_mvp.cli serve --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+pandas>=2.2
+exchange_calendars>=4.5
+akshare>=1.14
+baostock>=0.8
+tushare>=1.4
+python-dotenv>=1.0

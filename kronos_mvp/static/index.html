@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>土豆A股预测研究</title>
+  <script src="./config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root { color-scheme: light; font-family: Arial, "Microsoft YaHei", sans-serif; }
+    body { margin: 0; background: #f7f8fb; color: #18202f; }
+    header { padding: 20px 28px 12px; border-bottom: 1px solid #dde2ec; background: #fff; }
+    h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0; }
+    main { padding: 18px 28px 28px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 14px; }
+    label { display: grid; gap: 5px; font-size: 13px; color: #526071; }
+    input, button { height: 36px; border-radius: 6px; border: 1px solid #c8d0dc; font-size: 14px; }
+    input { width: 130px; padding: 0 10px; background: #fff; color: #18202f; }
+    button { padding: 0 16px; background: #1d4ed8; color: #fff; border-color: #1d4ed8; cursor: pointer; }
+    button.secondary { background: #fff; color: #1d4ed8; }
+    .pill { height: 36px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 999px; background: #eef3ff; color: #3556a8; font-size: 13px; border: 1px solid #d7e2ff; }
+    #status { min-height: 20px; color: #526071; font-size: 13px; margin-bottom: 12px; }
+    #chart { height: min(72vh, 720px); min-height: 420px; border: 1px solid #dde2ec; background: #fff; border-radius: 8px; }
+    @media (max-width: 720px) { main, header { padding-left: 14px; padding-right: 14px; } #chart { min-height: 360px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="site-title">土豆A股预测研究</h1>
+    <div id="subtitle">量化AI预测个股未来走势，通过100万k线数据预测。</div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>股票代码 <input id="symbol" value="600519" inputmode="numeric"></label>
+      <label>预测天数 <input id="horizon" value="5" type="number" min="1" max="60"></label>
+      <div class="pill">预测路径：默认3条</div>
+      <button id="sync">仅同步缓存</button>
+      <button id="predict" class="secondary">预测</button>
+    </div>
+    <div id="status"></div>
+    <div id="chart"></div>
+  </main>
+  <script>
+    const runtimeConfig = window.KRONOS_CONFIG || {};
+    const DEFAULT_PATHS = 3;
+    const chart = echarts.init(document.getElementById("chart"));
+    const statusEl = document.getElementById("status");
+    const getValue = id => document.getElementById(id).value.trim();
+    const buildApiUrl = path => {
+      const base = (runtimeConfig.apiBaseUrl || "").replace(/\/$/, "");
+      return `${base}${path}`;
+    };
+
+    document.title = runtimeConfig.siteTitle || "土豆A股预测研究";
+    document.getElementById("site-title").textContent = document.title;
+
+    document.getElementById("sync").onclick = async () => {
+      await post(buildApiUrl(`/api/sync/${getValue("symbol")}`), "缓存已同步");
+    };
+
+    document.getElementById("predict").onclick = async () => {
+      const symbol = getValue("symbol");
+      const horizon = getValue("horizon");
+      await get(buildApiUrl(`/api/predict/${symbol}?horizon=${horizon}&paths=${DEFAULT_PATHS}&auto_sync=true`));
+    };
+
+    async function post(url, okText) {
+      statusEl.textContent = "正在同步股票数据...";
+      const res = await fetch(url, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || "请求失败";
+        return;
+      }
+      statusEl.textContent = `${okText}: ${data.symbol}, ${data.provider}, ${data.rows} rows`;
+    }
+
+    async function get(url) {
+      statusEl.textContent = "正在同步最新数据并预测...";
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || "请求失败";
+        return;
+      }
+      statusEl.textContent = buildPredictionStatus(data);
+      render(data);
+    }
+
+    function buildPredictionStatus(data) {
+      const sync = data.sync || {};
+      if (sync.updated) {
+        return `${data.symbol} / ${data.backend} / 已自动同步 ${sync.provider} ${sync.rows} 条 / lookback ${data.lookback}`;
+      }
+      if (sync.warning) {
+        return `${data.symbol} / ${data.backend} / 同步失败，已使用本地缓存预测 / lookback ${data.lookback}`;
+      }
+      return `${data.symbol} / ${data.backend} / lookback ${data.lookback}`;
+    }
+
+    function displayPathName(name, index) {
+      const match = /^kronos_path_(\d+)$/.exec(name || "");
+      if (match) {
+        return `路径${match[1]}`;
+      }
+      return `路径${index + 1}`;
+    }
+
+    function render(data) {
+      const history = data.history.map(row => [row.date, row.open, row.close, row.low, row.high]);
+      const series = [{
+        name: "历史",
+        type: "candlestick",
+        data: history.map(row => row.slice(1)),
+      }];
+      const dates = history.map(row => row[0]);
+      data.paths.forEach((path, index) => {
+        const displayName = displayPathName(path.name, index);
+        const pathDates = path.points.map(point => point.date);
+        pathDates.forEach(day => { if (!dates.includes(day)) dates.push(day); });
+        const line = Array(history.length - 1).fill(null);
+        line.push(history[history.length - 1][2]);
+        path.points.forEach(point => line.push(point.close));
+        series.push({
+          name: displayName,
+          type: "line",
+          data: line,
+          smooth: true,
+          symbol: "none",
+          lineStyle: { width: 2, opacity: 0.72 },
+        });
+      });
+      chart.setOption({
+        tooltip: { trigger: "axis" },
+        legend: { top: 8 },
+        grid: { left: 48, right: 24, top: 50, bottom: 44 },
+        xAxis: { type: "category", data: dates, boundaryGap: true },
+        yAxis: { scale: true },
+        dataZoom: [{ type: "inside" }, { type: "slider", bottom: 10, height: 18 }],
+        series,
+      }, true);
+    }
+
+    window.addEventListener("resize", () => chart.resize());
+  </script>
+</body>
+</html>
