@@ -118,6 +118,54 @@ class ProviderDailyFetchTests(unittest.TestCase):
             with self.assertRaisesRegex(ProviderError, "does not support BJ"):
                 BaoStockDailyProvider().fetch_daily("920001")
 
+    def test_baostock_daily_fetch_reuses_login_session(self):
+        class FakeLoginResult:
+            error_code = "0"
+            error_msg = ""
+
+        class FakeQueryResult:
+            error_code = "0"
+            error_msg = ""
+
+            def __init__(self):
+                self.rows = [["2026-05-22", "10", "11", "9", "10.5", "1000", "10500"]]
+                self.index = -1
+
+            def next(self):
+                self.index += 1
+                return self.index < len(self.rows)
+
+            def get_row_data(self):
+                return self.rows[self.index]
+
+        class FakeBaoStock:
+            def __init__(self):
+                self.login_calls = 0
+                self.logout_calls = 0
+                self.query_calls = 0
+
+            def login(self):
+                self.login_calls += 1
+                return FakeLoginResult()
+
+            def logout(self):
+                self.logout_calls += 1
+
+            def query_history_k_data_plus(self, *args, **kwargs):
+                self.query_calls += 1
+                return FakeQueryResult()
+
+        fake_bs = FakeBaoStock()
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            provider = BaoStockDailyProvider()
+            provider.fetch_daily("600519")
+            provider.fetch_daily("600000")
+            provider._logout()
+
+        self.assertEqual(fake_bs.login_calls, 1)
+        self.assertEqual(fake_bs.query_calls, 2)
+        self.assertEqual(fake_bs.logout_calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

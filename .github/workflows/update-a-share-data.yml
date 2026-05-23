@@ -57,14 +57,61 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        market: [sh, sz, bj]
+        include:
+          - shard: sh-600
+            market: sh
+            prefixes: 600
+            providers: akshare,baostock,tushare
+          - shard: sh-603
+            market: sh
+            prefixes: 603,605
+            providers: akshare,baostock,tushare
+          - shard: sh-68
+            market: sh
+            prefixes: 688,689
+            providers: akshare,baostock,tushare
+          - shard: sh-601
+            market: sh
+            prefixes: 601
+            providers: akshare,baostock,tushare
+          - shard: sz-300
+            market: sz
+            prefixes: 300
+            providers: akshare,baostock,tushare
+          - shard: sz-301
+            market: sz
+            prefixes: 301,302
+            providers: akshare,baostock,tushare
+          - shard: sz-002
+            market: sz
+            prefixes: 002
+            providers: akshare,baostock,tushare
+          - shard: sz-00
+            market: sz
+            prefixes: 000,001,003
+            providers: akshare,baostock,tushare
+          - shard: bj-early
+            market: bj
+            prefixes: 9200,9201,9202
+            providers: akshare,tushare
+          - shard: bj-mid
+            market: bj
+            prefixes: 9203,9204,9205
+            providers: akshare,tushare
+          - shard: bj-late
+            market: bj
+            prefixes: 9206,9207,9208,9209
+            providers: akshare,tushare
     env:
       TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-      DATA_PROVIDERS: akshare,baostock,tushare
-      SHARD_DB_PATH: data/candles-${{ matrix.market }}.db
-      SHARD_PROGRESS_PATH: data/sync-progress-${{ matrix.market }}.json
-      SHARD_LOG_PATH: data/sync-log-${{ matrix.market }}.ndjson
-      SHARD_SUMMARY_PATH: data/shard-summary-${{ matrix.market }}.json
+      DATA_PROVIDERS: ${{ matrix.providers }}
+      SHARD_ID: ${{ matrix.shard }}
+      SHARD_MARKET: ${{ matrix.market }}
+      SHARD_PREFIXES: ${{ matrix.prefixes }}
+      SHARD_DB_PATH: data/candles-${{ matrix.shard }}.db
+      SHARD_PROGRESS_PATH: data/sync-progress-${{ matrix.shard }}.json
+      SHARD_LOG_PATH: data/sync-log-${{ matrix.shard }}.ndjson
+      SHARD_SUMMARY_PATH: data/shard-summary-${{ matrix.shard }}.json
       SHARD_RECOVERY_PASSES: 3
     steps:
       - uses: actions/checkout@v4
@@ -81,9 +128,9 @@ jobs:
           path: |
             ${{ env.SHARD_DB_PATH }}
             ${{ env.SHARD_PROGRESS_PATH }}
-          key: a-share-sync-${{ matrix.market }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: a-share-sync-${{ matrix.shard }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            a-share-sync-${{ matrix.market }}-${{ github.ref_name }}-
+            a-share-sync-${{ matrix.shard }}-${{ github.ref_name }}-
       - name: Sync market shard
         id: sync_shard
         run: |
@@ -93,8 +140,8 @@ jobs:
           pass=1
           max_passes="${SHARD_RECOVERY_PASSES}"
           while [ "$pass" -le "$max_passes" ]; do
-            echo "{\"event\":\"sync_pass\",\"market\":\"${{ matrix.market }}\",\"pass\":${pass},\"max_passes\":${max_passes}}" | tee -a "${SHARD_LOG_PATH}"
-            python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${{ matrix.market }}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee -a "${SHARD_LOG_PATH}"
+            echo "{\"event\":\"sync_pass\",\"shard\":\"${SHARD_ID}\",\"market\":\"${SHARD_MARKET}\",\"prefixes\":\"${SHARD_PREFIXES}\",\"pass\":${pass},\"max_passes\":${max_passes}}" | tee -a "${SHARD_LOG_PATH}"
+            python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${SHARD_MARKET}" --prefixes "${SHARD_PREFIXES}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee -a "${SHARD_LOG_PATH}"
             status=${PIPESTATUS[0]}
             if [ "$status" -eq 0 ]; then
               exit 0
@@ -107,34 +154,55 @@ jobs:
       - name: Report shard summary
         if: always()
         env:
-          SHARD_MARKET: ${{ matrix.market }}
           SYNC_OUTCOME: ${{ steps.sync_shard.outcome }}
         run: |
           python - <<'PY'
           import json
           import os
+          from collections import Counter
           from pathlib import Path
 
+          shard = os.environ["SHARD_ID"]
           market = os.environ["SHARD_MARKET"]
+          prefixes = os.environ.get("SHARD_PREFIXES", "")
           outcome = os.environ.get("SYNC_OUTCOME", "unknown")
           log_path = Path(os.environ["SHARD_LOG_PATH"])
           progress_path = Path(os.environ["SHARD_PROGRESS_PATH"])
           summary_path = Path(os.environ["SHARD_SUMMARY_PATH"])
           github_step_summary = os.environ["GITHUB_STEP_SUMMARY"]
 
+          error_counts = Counter()
+          failed_examples = []
+
+          def categorize_error(error_text: str) -> str:
+            text = (error_text or "").lower()
+            if "does not support bj" in text:
+              return "baostock-bj-unsupported"
+            if "proxyerror" in text or "remotedisconnected" in text or "connection" in text or "timeout" in text:
+              return "network-or-upstream-transport"
+            if "permission" in text or "权限" in text:
+              return "permission-denied"
+            if "returned no rows" in text:
+              return "returned-no-rows"
+            if "token" in text:
+              return "token-config"
+            return (error_text or "unknown")[:120]
+
           payload = {
-              "market": market,
-              "outcome": outcome,
-              "status": outcome,
-              "symbols": 0,
-              "processed": 0,
-              "succeeded": 0,
-              "failed": 0,
-              "updated": 0,
-              "rows": 0,
-              "retried": 0,
-              "remaining": 0,
-              "progress_file": str(progress_path),
+            "shard": shard,
+            "market": market,
+            "prefixes": prefixes.split(",") if prefixes else [],
+            "outcome": outcome,
+            "status": outcome,
+            "symbols": 0,
+            "processed": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "updated": 0,
+            "rows": 0,
+            "retried": 0,
+            "remaining": 0,
+            "progress_file": str(progress_path),
           }
 
           if log_path.exists():
@@ -149,6 +217,16 @@ jobs:
                   if isinstance(record, dict) and "summary" in record and isinstance(record["summary"], dict):
                       summary = record["summary"]
                       payload.update({key: summary.get(key, payload.get(key)) for key in payload.keys() if key in summary})
+                  if isinstance(record, dict) and record.get("ok") is False and record.get("error"):
+                      error_text = str(record.get("error"))
+                      error_counts[categorize_error(error_text)] += 1
+                      if len(failed_examples) < 10:
+                          failed_examples.append(
+                              {
+                                  "symbol": record.get("symbol", ""),
+                                  "error": error_text[:240],
+                              }
+                          )
 
           if progress_path.exists():
               try:
@@ -165,18 +243,26 @@ jobs:
           elif payload["symbols"] and payload["processed"] >= payload["symbols"]:
               payload["status"] = "completed"
 
+          payload["error_categories"] = [
+              {"category": category, "count": count}
+              for category, count in error_counts.most_common(5)
+          ]
+          payload["failed_examples"] = failed_examples
+
           summary_path.parent.mkdir(parents=True, exist_ok=True)
           summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
           line = (
-              f"Shard {market}: outcome={payload['outcome']}, status={payload['status']}, "
+              f"Shard {shard}: outcome={payload['outcome']}, status={payload['status']}, "
               f"succeeded={payload['succeeded']}, failed={payload['failed']}, remaining={payload['remaining']}, "
               f"updated={payload['updated']}, rows={payload['rows']}, retried={payload['retried']}"
           )
           print(line)
           with open(github_step_summary, "a", encoding="utf-8") as fh:
-              fh.write(f"### Shard {market} report\n")
+              fh.write(f"### Shard {shard} report\n")
               fh.write("\n")
+              fh.write(f"- market: {market}\n")
+              fh.write(f"- prefixes: {', '.join(payload['prefixes']) if payload['prefixes'] else 'all'}\n")
               fh.write(f"- outcome: {payload['outcome']}\n")
               fh.write(f"- status: {payload['status']}\n")
               fh.write(f"- succeeded: {payload['succeeded']}\n")
@@ -184,13 +270,22 @@ jobs:
               fh.write(f"- remaining: {payload['remaining']}\n")
               fh.write(f"- updated: {payload['updated']}\n")
               fh.write(f"- rows: {payload['rows']}\n")
-              fh.write(f"- retried: {payload['retried']}\n\n")
+              fh.write(f"- retried: {payload['retried']}\n")
+              if payload["error_categories"]:
+                fh.write("- error_categories:\n")
+                for item in payload["error_categories"]:
+                  fh.write(f"  - {item['category']}: {item['count']}\n")
+              if payload["failed_examples"]:
+                fh.write("- failed_examples:\n")
+                for item in payload["failed_examples"][:5]:
+                  fh.write(f"  - {item['symbol']}: {item['error']}\n")
+              fh.write("\n")
           PY
       - name: Upload shard state
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sync-shard-${{ matrix.market }}
+          name: sync-shard-${{ matrix.shard }}
           if-no-files-found: ignore
           path: |
             ${{ env.SHARD_DB_PATH }}
@@ -204,7 +299,7 @@ jobs:
           path: |
             ${{ env.SHARD_DB_PATH }}
             ${{ env.SHARD_PROGRESS_PATH }}
-          key: a-share-sync-${{ matrix.market }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: a-share-sync-${{ matrix.shard }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   merge_market_shards:
     if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.event.inputs.symbols == '') }}
@@ -279,7 +374,7 @@ jobs:
           print("Shard rollout summary:")
           for item in summaries:
             print(
-              f"  {item.get('market')}: outcome={item.get('outcome')}, status={item.get('status')}, "
+              f"  {item.get('shard', item.get('market'))}: outcome={item.get('outcome')}, status={item.get('status')}, "
               f"succeeded={item.get('succeeded')}, failed={item.get('failed')}, remaining={item.get('remaining')}, "
               f"updated={item.get('updated')}, rows={item.get('rows')}, retried={item.get('retried')}"
             )
@@ -295,7 +390,7 @@ jobs:
             fh.write("### Shard rollout summary\n\n")
             for item in summaries:
               fh.write(
-                f"- {item.get('market')}: outcome={item.get('outcome')}, status={item.get('status')}, "
+                f"- {item.get('shard', item.get('market'))}: outcome={item.get('outcome')}, status={item.get('status')}, "
                 f"succeeded={item.get('succeeded')}, failed={item.get('failed')}, remaining={item.get('remaining')}, "
                 f"updated={item.get('updated')}, rows={item.get('rows')}, retried={item.get('retried')}\n"
               )

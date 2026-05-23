@@ -34,6 +34,39 @@ class CliTests(unittest.TestCase):
         self.assertIn('"mode": "all"', stdout.getvalue())
         self.assertIn('"updated": 1', stdout.getvalue())
 
+    def test_sync_all_filters_symbols_by_prefixes(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.side_effect = [
+            SyncResult(symbol="600519", provider="baostock", rows=1),
+            SyncResult(symbol="688001", provider="baostock", rows=0),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv",
+            [
+                "prog",
+                "--db",
+                str(Path(tmp) / "candles.db"),
+                "sync",
+                "--all",
+                "--market",
+                "sh",
+                "--prefixes",
+                "600,688",
+            ],
+        ), patch("kronos_mvp.cli.CandleStore"), patch(
+            "kronos_mvp.cli.build_default_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.DataSyncService", return_value=sync_service
+        ), patch(
+            "kronos_mvp.cli.list_a_share_symbols", return_value=["600519", "603288", "688001"]
+        ) as list_symbols, redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        self.assertEqual(sync_service.sync_symbol.call_args_list, [call("600519"), call("688001")])
+        list_symbols.assert_called_once_with(market="sh")
+        self.assertIn('"prefixes": ["600", "688"]', stdout.getvalue())
+
     def test_sync_all_retries_failed_symbol_and_removes_progress_file_after_success(self):
         sync_service = Mock()
         attempts = {"000001": 0}

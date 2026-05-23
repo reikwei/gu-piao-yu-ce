@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -92,35 +93,63 @@ class AkShareDailyProvider:
 class BaoStockDailyProvider:
     name = "baostock"
 
-    def fetch_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
-        if infer_a_share_market(symbol) == "bj":
-            raise ProviderError("baostock does not support BJ A-share history")
+    def __init__(self) -> None:
+        self._client = None
+        self._logged_in = False
+        self._logout_registered = False
 
+    def _get_client(self):
+        if self._client is not None:
+            return self._client
         try:
             import baostock as bs
         except ImportError as exc:
             raise ProviderError("baostock is not installed") from exc
+        self._client = bs
+        return self._client
 
-        code = _baostock_symbol(symbol)
+    def _ensure_login(self):
+        bs = self._get_client()
+        if self._logged_in:
+            return bs
         login = bs.login()
         if login.error_code != "0":
             raise ProviderError(f"baostock login failed: {login.error_msg}")
+        self._logged_in = True
+        if not self._logout_registered:
+            atexit.register(self._logout)
+            self._logout_registered = True
+        return bs
+
+    def _logout(self) -> None:
+        if not self._logged_in or self._client is None:
+            return
         try:
-            result = bs.query_history_k_data_plus(
-                code,
-                "date,open,high,low,close,volume,amount",
-                start_date=_format_iso_date(start_date),
-                end_date="",
-                frequency="d",
-                adjustflag="2",
-            )
-            if result.error_code != "0":
-                raise ProviderError(result.error_msg)
-            rows = []
-            while result.next():
-                rows.append(result.get_row_data())
+            self._client.logout()
+        except Exception:
+            pass
         finally:
-            bs.logout()
+            self._logged_in = False
+
+    def fetch_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        if infer_a_share_market(symbol) == "bj":
+            raise ProviderError("baostock does not support BJ A-share history")
+
+        code = _baostock_symbol(symbol)
+        bs = self._ensure_login()
+        result = bs.query_history_k_data_plus(
+            code,
+            "date,open,high,low,close,volume,amount",
+            start_date=_format_iso_date(start_date),
+            end_date="",
+            frequency="d",
+            adjustflag="2",
+        )
+        if result.error_code != "0":
+            raise ProviderError(result.error_msg)
+        rows = []
+        while result.next():
+            rows.append(result.get_row_data())
 
         if not rows:
             raise ProviderError("baostock returned no rows")

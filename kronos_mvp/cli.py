@@ -35,6 +35,10 @@ def main() -> None:
         default="all",
         help="limit all-market sync to one exchange shard",
     )
+    sync_parser.add_argument(
+        "--prefixes",
+        help="comma-separated symbol prefixes used to split all-market sync into smaller shards",
+    )
     sync_parser.add_argument("--progress-file", help="progress JSON file used to resume interrupted all-market syncs")
     sync_parser.add_argument("--max-retries", type=int, default=int(os.getenv("SYNC_MAX_RETRIES", "2")))
     sync_parser.add_argument("--reset-progress", action="store_true", help="discard saved progress and rebuild the queue")
@@ -84,22 +88,27 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
         parser.error("sync --market requires --all")
     if not args.sync_all and args.progress_file:
         parser.error("sync --progress-file requires --all")
+    if not args.sync_all and args.prefixes:
+        parser.error("sync --prefixes requires --all")
+
+    prefixes = _parse_prefixes(args.prefixes)
 
     store = CandleStore(args.db)
     service = DataSyncService(store=store, providers=build_default_providers())
 
     if args.sync_all:
-        progress_path = _resolve_progress_path(store.db_path, args.market, args.progress_file)
+        progress_path = _resolve_progress_path(store.db_path, args.market, args.progress_file, prefixes)
         if args.reset_progress:
             _delete_progress_file(progress_path)
 
-        state = _load_progress_state(progress_path, market=args.market, max_retries=args.max_retries)
+        state = _load_progress_state(progress_path, market=args.market, max_retries=args.max_retries, prefixes=prefixes)
         resume_source = None
         if state is None:
             symbols = list_a_share_symbols(market=args.market)
+            symbols = _filter_symbols_by_prefixes(symbols, prefixes)
             if not symbols:
                 parser.error("sync --all resolved no symbols")
-            state = _new_progress_state(symbols=symbols, market=args.market, max_retries=args.max_retries)
+            state = _new_progress_state(symbols=symbols, market=args.market, max_retries=args.max_retries, prefixes=prefixes)
             _save_progress_state(progress_path, state)
             resume_source = "fresh"
         else:
@@ -114,6 +123,7 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
                     "progress_file": str(progress_path),
                     "resume": resume_source != "fresh",
                     "resume_source": resume_source,
+                    "prefixes": state.get("prefixes", []),
                     "pending": len(state["pending"]),
                     "total": state["summary"]["symbols"],
                 },
@@ -279,20 +289,23 @@ def _run_merge_db(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
-def _resolve_progress_path(db_path: str | Path, market: str, progress_file: str | None) -> Path:
+def _resolve_progress_path(db_path: str | Path, market: str, progress_file: str | None, prefixes: tuple[str, ...]) -> Path:
     if progress_file:
         return Path(progress_file)
     base_path = Path(db_path)
     suffix = "" if market == "all" else f"-{market}"
+    if prefixes:
+        suffix += "-" + "-".join(prefixes)
     return base_path.with_name(f"sync-progress{suffix}.json")
 
 
-def _new_progress_state(symbols: list[str], market: str, max_retries: int) -> dict[str, Any]:
+def _new_progress_state(symbols: list[str], market: str, max_retries: int, prefixes: tuple[str, ...]) -> dict[str, Any]:
     normalized = _normalize_symbols(symbols)
     return {
         "version": _PROGRESS_VERSION,
         "mode": "all",
         "market": market,
+        "prefixes": list(prefixes),
         "max_retries": max_retries,
         "status": "running",
         "started_at": _utc_now(),
@@ -312,7 +325,7 @@ def _new_progress_state(symbols: list[str], market: str, max_retries: int) -> di
     }
 
 
-def _load_progress_state(progress_path: Path, market: str, max_retries: int) -> dict[str, Any] | None:
+def _load_progress_state(progress_path: Path, market: str, max_retries: int, prefixes: tuple[str, ...]) -> dict[str, Any] | None:
     if not progress_path.exists():
         return None
     try:
@@ -320,7 +333,12 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int) -> 
     except (OSError, json.JSONDecodeError):
         return None
 
-    if payload.get("version") != _PROGRESS_VERSION or payload.get("mode") != "all" or payload.get("market") != market:
+    if (
+        payload.get("version") != _PROGRESS_VERSION
+        or payload.get("mode") != "all"
+        or payload.get("market") != market
+        or tuple(str(prefix) for prefix in payload.get("prefixes", [])) != prefixes
+    ):
         return None
 
     pending = _normalize_symbols(payload.get("pending", []))
@@ -330,6 +348,7 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int) -> 
         payload["pending"] = pending
         payload["attempts"] = {symbol: _safe_int(attempts.get(symbol), 0) for symbol in pending}
         payload["failed_symbols"] = list(payload.get("failed_symbols", []))
+        payload["prefixes"] = list(prefixes)
         payload["summary"] = {
             "symbols": _safe_int(summary.get("symbols"), len(pending)),
             "processed": _safe_int(summary.get("processed"), 0),
@@ -351,7 +370,7 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int) -> 
     ]
     failed_symbols = [symbol for symbol in failed_symbols if symbol]
     if failed_symbols:
-        state = _new_progress_state(symbols=failed_symbols, market=market, max_retries=max_retries)
+        state = _new_progress_state(symbols=failed_symbols, market=market, max_retries=max_retries, prefixes=prefixes)
         state["resume_source"] = "failed_symbols"
         return state
 
@@ -397,6 +416,29 @@ def _normalize_symbols(symbols: object) -> list[str]:
             seen.add(code)
             normalized.append(code)
     return normalized
+
+
+def _parse_prefixes(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    prefixes: list[str] = []
+    seen: set[str] = set()
+    for raw in value.split(","):
+        prefix = raw.strip()
+        if not prefix:
+            continue
+        if not prefix.isdigit():
+            raise SystemExit("sync --prefixes only accepts digits and commas")
+        if prefix not in seen:
+            seen.add(prefix)
+            prefixes.append(prefix)
+    return tuple(prefixes)
+
+
+def _filter_symbols_by_prefixes(symbols: list[str], prefixes: tuple[str, ...]) -> list[str]:
+    if not prefixes:
+        return symbols
+    return [symbol for symbol in symbols if any(symbol.startswith(prefix) for prefix in prefixes)]
 
 
 def _safe_int(value: object, default: int) -> int:
