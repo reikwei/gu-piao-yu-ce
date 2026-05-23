@@ -36,6 +36,22 @@ class CandleStoreTests(unittest.TestCase):
             self.assertEqual(len(candles), 1)
             self.assertEqual(candles[0].close, 2.5)
 
+    def test_merge_from_imports_rows_from_other_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = CandleStore(Path(tmp) / "target.db")
+            source = CandleStore(Path(tmp) / "source.db")
+            source.upsert_many(
+                "600519",
+                [Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100)],
+            )
+
+            merged = target.merge_from(source.db_path)
+
+            self.assertEqual(merged, 1)
+            candles = target.get_latest("600519", limit=1)
+            self.assertEqual(len(candles), 1)
+            self.assertEqual(candles[0].close, 11)
+
 
 if __name__ == "__main__":
     unittest.main()

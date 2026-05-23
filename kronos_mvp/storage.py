@@ -114,6 +114,37 @@ class CandleStore:
             return None
         return date.fromisoformat(row["latest_date"])
 
+    def merge_from(self, source_db_path: str | Path) -> int:
+        source_path = Path(source_db_path)
+        if not source_path.exists():
+            return 0
+
+        with self._connection() as conn:
+            conn.execute("ATTACH DATABASE ? AS source_db", (str(source_path),))
+            try:
+                row = conn.execute(
+                    """
+                    SELECT name
+                    FROM source_db.sqlite_master
+                    WHERE type = 'table' AND name = 'candles'
+                    """
+                ).fetchone()
+                if row is None:
+                    return 0
+
+                total = conn.execute("SELECT COUNT(*) AS total FROM source_db.candles").fetchone()["total"]
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO candles(symbol, date, open, high, low, close, volume, amount)
+                    SELECT symbol, date, open, high, low, close, volume, amount
+                    FROM source_db.candles
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.execute("DETACH DATABASE source_db")
+        return int(total)
+
 
 def normalize_symbol(symbol: str) -> str:
     return symbol.strip().lower().replace("sh.", "").replace("sz.", "").replace("bj.", "")

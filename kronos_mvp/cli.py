@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -10,6 +13,9 @@ from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .storage import CandleStore, normalize_symbol
 from .sync import DataSyncService
+
+
+_PROGRESS_VERSION = 1
 
 
 load_dotenv()
@@ -23,6 +29,15 @@ def main() -> None:
     sync_parser = subparsers.add_parser("sync", help="sync daily K-line data")
     sync_parser.add_argument("symbols", nargs="*")
     sync_parser.add_argument("--all", action="store_true", dest="sync_all", help="sync all A-share symbols")
+    sync_parser.add_argument(
+        "--market",
+        choices=["all", "sh", "sz", "bj"],
+        default="all",
+        help="limit all-market sync to one exchange shard",
+    )
+    sync_parser.add_argument("--progress-file", help="progress JSON file used to resume interrupted all-market syncs")
+    sync_parser.add_argument("--max-retries", type=int, default=int(os.getenv("SYNC_MAX_RETRIES", "2")))
+    sync_parser.add_argument("--reset-progress", action="store_true", help="discard saved progress and rebuild the queue")
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
@@ -34,54 +49,16 @@ def main() -> None:
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
 
+    merge_parser = subparsers.add_parser("merge-db", help="merge multiple SQLite caches into one database")
+    merge_parser.add_argument("target")
+    merge_parser.add_argument("sources", nargs="+")
+
     args = parser.parse_args()
-    store = CandleStore(args.db)
 
     if args.command == "sync":
-        if args.sync_all and args.symbols:
-            parser.error("sync --all cannot be combined with explicit symbols")
-        if args.sync_all:
-            symbols = list_a_share_symbols()
-        else:
-            symbols = args.symbols
-        if not symbols:
-            parser.error("sync requires one or more symbols or --all")
-
-        service = DataSyncService(store=store, providers=build_default_providers())
-        succeeded = 0
-        failed = 0
-        updated = 0
-        total_rows = 0
-        for symbol in symbols:
-            try:
-                result = service.sync_symbol(symbol)
-                succeeded += 1
-                updated += int(result.rows > 0)
-                total_rows += result.rows
-                print(json.dumps({"ok": True, **result.__dict__}, ensure_ascii=False))
-            except Exception as exc:
-                failed += 1
-                print(json.dumps({"ok": False, "symbol": normalize_symbol(symbol), "error": str(exc)}, ensure_ascii=False))
-                if not args.sync_all:
-                    raise
-        print(
-            json.dumps(
-                {
-                    "summary": {
-                        "mode": "all" if args.sync_all else "symbols",
-                        "symbols": len(symbols),
-                        "succeeded": succeeded,
-                        "failed": failed,
-                        "updated": updated,
-                        "rows": total_rows,
-                    }
-                },
-                ensure_ascii=False,
-            )
-        )
-        if succeeded == 0:
-            raise SystemExit(1)
+        _run_sync(parser, args)
     elif args.command == "predict":
+        store = CandleStore(args.db)
         candles = store.get_latest(args.symbol, limit=args.lookback)
         predictor = KronosPredictor(
             model_name=os.getenv("KRONOS_MODEL", "NeoQuasar/Kronos-small"),
@@ -94,6 +71,343 @@ def main() -> None:
         import uvicorn
 
         uvicorn.run("kronos_mvp.api:app", host=args.host, port=args.port, reload=False)
+    elif args.command == "merge-db":
+        _run_merge_db(args)
+
+
+def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.max_retries < 0:
+        parser.error("sync --max-retries must be >= 0")
+    if args.sync_all and args.symbols:
+        parser.error("sync --all cannot be combined with explicit symbols")
+    if not args.sync_all and args.market != "all":
+        parser.error("sync --market requires --all")
+    if not args.sync_all and args.progress_file:
+        parser.error("sync --progress-file requires --all")
+
+    store = CandleStore(args.db)
+    service = DataSyncService(store=store, providers=build_default_providers())
+
+    if args.sync_all:
+        progress_path = _resolve_progress_path(store.db_path, args.market, args.progress_file)
+        if args.reset_progress:
+            _delete_progress_file(progress_path)
+
+        state = _load_progress_state(progress_path, market=args.market, max_retries=args.max_retries)
+        resume_source = None
+        if state is None:
+            symbols = list_a_share_symbols(market=args.market)
+            if not symbols:
+                parser.error("sync --all resolved no symbols")
+            state = _new_progress_state(symbols=symbols, market=args.market, max_retries=args.max_retries)
+            _save_progress_state(progress_path, state)
+            resume_source = "fresh"
+        else:
+            resume_source = str(state.pop("resume_source", "progress"))
+
+        print(
+            json.dumps(
+                {
+                    "event": "sync_progress",
+                    "mode": state["mode"],
+                    "market": state["market"],
+                    "progress_file": str(progress_path),
+                    "resume": resume_source != "fresh",
+                    "resume_source": resume_source,
+                    "pending": len(state["pending"]),
+                    "total": state["summary"]["symbols"],
+                },
+                ensure_ascii=False,
+            )
+        )
+        _run_all_market_sync(service, state, progress_path, args.max_retries)
+        return
+
+    symbols = _normalize_symbols(args.symbols)
+    if not symbols:
+        parser.error("sync requires one or more symbols or --all")
+    _run_symbol_sync(service, symbols)
+
+
+def _run_symbol_sync(service: DataSyncService, symbols: list[str]) -> None:
+    succeeded = 0
+    updated = 0
+    total_rows = 0
+    for symbol in symbols:
+        result = service.sync_symbol(symbol)
+        succeeded += 1
+        updated += int(result.rows > 0)
+        total_rows += result.rows
+        print(json.dumps({"ok": True, **result.__dict__}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "mode": "symbols",
+                    "symbols": len(symbols),
+                    "succeeded": succeeded,
+                    "failed": 0,
+                    "updated": updated,
+                    "rows": total_rows,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def _run_all_market_sync(
+    service: DataSyncService,
+    state: dict[str, Any],
+    progress_path: Path,
+    max_retries: int,
+) -> None:
+    while state["pending"]:
+        symbol = state["pending"][0]
+        attempt = _safe_int(state["attempts"].get(symbol), 0) + 1
+        state["attempts"][symbol] = attempt
+        _save_progress_state(progress_path, state)
+
+        try:
+            result = service.sync_symbol(symbol)
+        except Exception as exc:
+            error_text = str(exc)
+            if attempt <= max_retries:
+                state["summary"]["retried"] += 1
+                state["pending"].append(state["pending"].pop(0))
+                _save_progress_state(progress_path, state)
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "symbol": normalize_symbol(symbol),
+                            "error": error_text,
+                            "retrying": True,
+                            "attempt": attempt,
+                            "max_retries": max_retries,
+                            "progress": _progress_view(state),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                continue
+
+            state["pending"].pop(0)
+            state["attempts"].pop(symbol, None)
+            state["summary"]["failed"] += 1
+            state["summary"]["processed"] += 1
+            state["failed_symbols"].append(
+                {
+                    "symbol": normalize_symbol(symbol),
+                    "error": error_text,
+                    "attempts": attempt,
+                }
+            )
+            _save_progress_state(progress_path, state)
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "symbol": normalize_symbol(symbol),
+                        "error": error_text,
+                        "retrying": False,
+                        "attempt": attempt,
+                        "max_retries": max_retries,
+                        "progress": _progress_view(state),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            continue
+
+        state["pending"].pop(0)
+        state["attempts"].pop(symbol, None)
+        state["summary"]["succeeded"] += 1
+        state["summary"]["processed"] += 1
+        state["summary"]["updated"] += int(result.rows > 0)
+        state["summary"]["rows"] += result.rows
+        _save_progress_state(progress_path, state)
+        print(json.dumps({"ok": True, **result.__dict__, "progress": _progress_view(state)}, ensure_ascii=False))
+
+    summary = {
+        **state["summary"],
+        "mode": state["mode"],
+        "market": state["market"],
+        "remaining": len(state["pending"]),
+        "progress_file": str(progress_path),
+    }
+    if state["failed_symbols"]:
+        summary["failed_symbols"] = list(state["failed_symbols"])
+        _save_progress_state(progress_path, state)
+    else:
+        _delete_progress_file(progress_path)
+    print(json.dumps({"summary": summary}, ensure_ascii=False))
+
+    if state["failed_symbols"] or state["summary"]["succeeded"] == 0:
+        raise SystemExit(1)
+
+
+def _run_merge_db(args: argparse.Namespace) -> None:
+    target_store = CandleStore(args.target)
+    merged_sources = 0
+    total_rows = 0
+
+    for source in args.sources:
+        source_path = Path(source)
+        if not source_path.exists():
+            print(json.dumps({"ok": False, "source": str(source_path), "error": "not found"}, ensure_ascii=False))
+            continue
+        rows = target_store.merge_from(source_path)
+        merged_sources += 1
+        total_rows += rows
+        print(json.dumps({"ok": True, "source": str(source_path), "rows": rows}, ensure_ascii=False))
+
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "mode": "merge-db",
+                    "target": str(Path(args.target)),
+                    "sources": merged_sources,
+                    "rows": total_rows,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+    if merged_sources == 0:
+        raise SystemExit(1)
+
+
+def _resolve_progress_path(db_path: str | Path, market: str, progress_file: str | None) -> Path:
+    if progress_file:
+        return Path(progress_file)
+    base_path = Path(db_path)
+    suffix = "" if market == "all" else f"-{market}"
+    return base_path.with_name(f"sync-progress{suffix}.json")
+
+
+def _new_progress_state(symbols: list[str], market: str, max_retries: int) -> dict[str, Any]:
+    normalized = _normalize_symbols(symbols)
+    return {
+        "version": _PROGRESS_VERSION,
+        "mode": "all",
+        "market": market,
+        "max_retries": max_retries,
+        "status": "running",
+        "started_at": _utc_now(),
+        "updated_at": _utc_now(),
+        "pending": normalized,
+        "attempts": {},
+        "failed_symbols": [],
+        "summary": {
+            "symbols": len(normalized),
+            "processed": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "updated": 0,
+            "rows": 0,
+            "retried": 0,
+        },
+    }
+
+
+def _load_progress_state(progress_path: Path, market: str, max_retries: int) -> dict[str, Any] | None:
+    if not progress_path.exists():
+        return None
+    try:
+        payload = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if payload.get("version") != _PROGRESS_VERSION or payload.get("mode") != "all" or payload.get("market") != market:
+        return None
+
+    pending = _normalize_symbols(payload.get("pending", []))
+    if pending:
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        attempts = payload.get("attempts") if isinstance(payload.get("attempts"), dict) else {}
+        payload["pending"] = pending
+        payload["attempts"] = {symbol: _safe_int(attempts.get(symbol), 0) for symbol in pending}
+        payload["failed_symbols"] = list(payload.get("failed_symbols", []))
+        payload["summary"] = {
+            "symbols": _safe_int(summary.get("symbols"), len(pending)),
+            "processed": _safe_int(summary.get("processed"), 0),
+            "succeeded": _safe_int(summary.get("succeeded"), 0),
+            "failed": _safe_int(summary.get("failed"), 0),
+            "updated": _safe_int(summary.get("updated"), 0),
+            "rows": _safe_int(summary.get("rows"), 0),
+            "retried": _safe_int(summary.get("retried"), 0),
+        }
+        payload["max_retries"] = max_retries
+        payload["status"] = "running"
+        payload["resume_source"] = "pending"
+        return payload
+
+    failed_symbols = [
+        normalize_symbol(item.get("symbol", ""))
+        for item in payload.get("failed_symbols", [])
+        if isinstance(item, dict) and item.get("symbol")
+    ]
+    failed_symbols = [symbol for symbol in failed_symbols if symbol]
+    if failed_symbols:
+        state = _new_progress_state(symbols=failed_symbols, market=market, max_retries=max_retries)
+        state["resume_source"] = "failed_symbols"
+        return state
+
+    _delete_progress_file(progress_path)
+    return None
+
+
+def _save_progress_state(progress_path: Path, state: dict[str, Any]) -> None:
+    payload = {
+        **state,
+        "status": "failed" if state["failed_symbols"] else ("running" if state["pending"] else "completed"),
+        "updated_at": _utc_now(),
+    }
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = progress_path.with_suffix(progress_path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(progress_path)
+
+
+def _delete_progress_file(progress_path: Path) -> None:
+    if progress_path.exists():
+        progress_path.unlink()
+
+
+def _progress_view(state: dict[str, Any]) -> dict[str, int]:
+    return {
+        "processed": int(state["summary"]["processed"]),
+        "total": int(state["summary"]["symbols"]),
+        "remaining": len(state["pending"]),
+        "failed": int(state["summary"]["failed"]),
+        "retried": int(state["summary"]["retried"]),
+    }
+
+
+def _normalize_symbols(symbols: object) -> list[str]:
+    if not isinstance(symbols, list):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for symbol in symbols:
+        code = normalize_symbol(str(symbol))
+        if code and code not in seen:
+            seen.add(code)
+            normalized.append(code)
+    return normalized
+
+
+def _safe_int(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 if __name__ == "__main__":

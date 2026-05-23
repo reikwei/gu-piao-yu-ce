@@ -68,6 +68,16 @@ python -m kronos_mvp.cli sync --all
 
 第一次全市场同步会比较久；后续同样再跑 `sync --all` 时，会按本地 SQLite 中每只股票的最新日期增量抓取，不再把每只股票整段历史重复写入数据库。
 
+全市场同步现在还会默认写入进度文件，长任务如果中断，再次执行同样的 `sync --all` 会自动从未完成队列继续；单只股票临时失败会按 `--max-retries` 做重试。需要从头重建队列时，可以显式加上 `--reset-progress`。
+
+如果要手动只跑某个交易所分片，可以使用：
+
+```powershell
+python -m kronos_mvp.cli sync --all --market sh
+python -m kronos_mvp.cli sync --all --market sz
+python -m kronos_mvp.cli sync --all --market bj
+```
+
 5. 启动本地 API。
 
 ```powershell
@@ -132,6 +142,8 @@ python -m unittest discover -s tests -v
 - 默认按全市场 A 股执行同步；如果手动触发时填写 symbols，则只同步传入的股票列表。
 - 只安装同步任务所需依赖，不安装完整推理依赖
 - 第一次跑全市场会最慢；后续每日任务会根据本地 SQLite 已有的最新日期，对每只股票做增量同步。
+- 全市场任务会拆成沪市、深市、北交所三个并行 job，各自维护独立 SQLite 分片和进度文件，最后再合并成单个 `candles.db` 上传到 VPS。
+- 每个分片 job 都会把 SQLite 分片和进度文件保存到 Actions cache；如果某次运行中断或部分失败，下次同分片任务会继续从剩余队列恢复，而不是从头再扫一遍。
 - 工作流启用了并发互斥和更长超时，避免上一次全市场任务还没结束时下一次调度重叠。
 - 网页上的“仅同步缓存”按钮主要用于手动补拉某只股票或临时刷新缓存。
 - 可选 Secrets：

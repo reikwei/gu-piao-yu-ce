@@ -1,9 +1,10 @@
 import io
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from kronos_mvp.cli import main
 from kronos_mvp.models import SyncResult
@@ -25,12 +26,112 @@ class CliTests(unittest.TestCase):
             "kronos_mvp.cli.DataSyncService", return_value=sync_service
         ), patch(
             "kronos_mvp.cli.list_a_share_symbols", return_value=["000001", "600519"]
-        ), redirect_stdout(io.StringIO()) as stdout:
+        ) as list_symbols, redirect_stdout(io.StringIO()) as stdout:
             main()
 
         self.assertEqual(sync_service.sync_symbol.call_count, 2)
+        list_symbols.assert_called_once_with(market="all")
         self.assertIn('"mode": "all"', stdout.getvalue())
         self.assertIn('"updated": 1', stdout.getvalue())
+
+    def test_sync_all_retries_failed_symbol_and_removes_progress_file_after_success(self):
+        sync_service = Mock()
+        attempts = {"000001": 0}
+
+        def sync_symbol(symbol: str) -> SyncResult:
+            if symbol == "000001":
+                attempts[symbol] += 1
+                if attempts[symbol] == 1:
+                    raise RuntimeError("offline")
+                return SyncResult(symbol="000001", provider="baostock", rows=1)
+            return SyncResult(symbol=symbol, provider="baostock", rows=0)
+
+        sync_service.sync_symbol.side_effect = sync_symbol
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "candles.db"
+            progress_path = Path(tmp) / "progress.json"
+            with patch(
+                "sys.argv",
+                [
+                    "prog",
+                    "--db",
+                    str(db_path),
+                    "sync",
+                    "--all",
+                    "--progress-file",
+                    str(progress_path),
+                    "--max-retries",
+                    "1",
+                ],
+            ), patch("kronos_mvp.cli.build_default_providers", return_value=[]), patch(
+                "kronos_mvp.cli.DataSyncService", return_value=sync_service
+            ), patch(
+                "kronos_mvp.cli.list_a_share_symbols", return_value=["000001", "600519"]
+            ), redirect_stdout(io.StringIO()) as stdout:
+                main()
+
+        self.assertEqual(
+            sync_service.sync_symbol.call_args_list,
+            [call("000001"), call("600519"), call("000001")],
+        )
+        self.assertFalse(progress_path.exists())
+        self.assertIn('"retrying": true', stdout.getvalue())
+        self.assertIn('"retried": 1', stdout.getvalue())
+
+    def test_sync_all_resumes_from_saved_progress_without_refetching_symbol_list(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.return_value = SyncResult(symbol="000001", provider="baostock", rows=0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "candles.db"
+            progress_path = Path(tmp) / "progress.json"
+            progress_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "mode": "all",
+                        "market": "sz",
+                        "pending": ["000001"],
+                        "attempts": {},
+                        "failed_symbols": [],
+                        "summary": {
+                            "symbols": 2,
+                            "processed": 1,
+                            "succeeded": 1,
+                            "failed": 0,
+                            "updated": 1,
+                            "rows": 2,
+                            "retried": 0,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "sys.argv",
+                [
+                    "prog",
+                    "--db",
+                    str(db_path),
+                    "sync",
+                    "--all",
+                    "--market",
+                    "sz",
+                    "--progress-file",
+                    str(progress_path),
+                ],
+            ), patch("kronos_mvp.cli.build_default_providers", return_value=[]), patch(
+                "kronos_mvp.cli.DataSyncService", return_value=sync_service
+            ), patch("kronos_mvp.cli.list_a_share_symbols") as list_symbols, redirect_stdout(io.StringIO()) as stdout:
+                main()
+
+        list_symbols.assert_not_called()
+        sync_service.sync_symbol.assert_called_once_with("000001")
+        self.assertFalse(progress_path.exists())
+        self.assertIn('"resume": true', stdout.getvalue())
 
 
 if __name__ == "__main__":

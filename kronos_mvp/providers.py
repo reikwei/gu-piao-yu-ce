@@ -174,7 +174,7 @@ def build_default_providers() -> list[DataProvider]:
     return providers
 
 
-def list_a_share_symbols() -> list[str]:
+def list_a_share_symbols(market: str = "all") -> list[str]:
     errors: list[str] = []
     for name in _configured_provider_names():
         try:
@@ -186,7 +186,14 @@ def list_a_share_symbols() -> list[str]:
                 symbols = _list_symbols_from_tushare(os.getenv("TUSHARE_TOKEN"))
             else:
                 continue
-            normalized = sorted({normalize_symbol(symbol) for symbol in symbols if _is_a_share_symbol(normalize_symbol(symbol))})
+            normalized = sorted(
+                {
+                    normalize_symbol(symbol)
+                    for symbol in symbols
+                    if _is_a_share_symbol(normalize_symbol(symbol))
+                    and (market == "all" or infer_a_share_market(normalize_symbol(symbol)) == market)
+                }
+            )
             if normalized:
                 return normalized
             raise ProviderError("returned no A-share symbols")
@@ -219,6 +226,15 @@ def _is_a_share_symbol(symbol: str) -> bool:
     if len(code) != 6 or not code.isdigit():
         return False
     return code.startswith(("000", "001", "002", "003", "300", "301", "430", "600", "601", "603", "605", "688", "689", "8", "92"))
+
+
+def infer_a_share_market(symbol: str) -> str:
+    code = normalize_symbol(symbol)
+    if code.startswith(("43", "8", "92")):
+        return "bj"
+    if code.startswith("6"):
+        return "sh"
+    return "sz"
 
 
 def _list_symbols_from_akshare() -> list[str]:
