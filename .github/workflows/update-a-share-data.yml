@@ -63,6 +63,8 @@ jobs:
       DATA_PROVIDERS: akshare,baostock,tushare
       SHARD_DB_PATH: data/candles-${{ matrix.market }}.db
       SHARD_PROGRESS_PATH: data/sync-progress-${{ matrix.market }}.json
+      SHARD_LOG_PATH: data/sync-log-${{ matrix.market }}.ndjson
+      SHARD_SUMMARY_PATH: data/shard-summary-${{ matrix.market }}.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -82,9 +84,93 @@ jobs:
           restore-keys: |
             a-share-sync-${{ matrix.market }}-${{ github.ref_name }}-
       - name: Sync market shard
+        id: sync_shard
         run: |
           mkdir -p data
-          python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${{ matrix.market }}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2
+          set -o pipefail
+          python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${{ matrix.market }}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee "${SHARD_LOG_PATH}"
+      - name: Report shard summary
+        if: always()
+        env:
+          SHARD_MARKET: ${{ matrix.market }}
+          SYNC_OUTCOME: ${{ steps.sync_shard.outcome }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          market = os.environ["SHARD_MARKET"]
+          outcome = os.environ.get("SYNC_OUTCOME", "unknown")
+          log_path = Path(os.environ["SHARD_LOG_PATH"])
+          progress_path = Path(os.environ["SHARD_PROGRESS_PATH"])
+          summary_path = Path(os.environ["SHARD_SUMMARY_PATH"])
+          github_step_summary = os.environ["GITHUB_STEP_SUMMARY"]
+
+          payload = {
+              "market": market,
+              "outcome": outcome,
+              "status": outcome,
+              "symbols": 0,
+              "processed": 0,
+              "succeeded": 0,
+              "failed": 0,
+              "updated": 0,
+              "rows": 0,
+              "retried": 0,
+              "remaining": 0,
+              "progress_file": str(progress_path),
+          }
+
+          if log_path.exists():
+              for line in log_path.read_text(encoding="utf-8").splitlines():
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      record = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if isinstance(record, dict) and "summary" in record and isinstance(record["summary"], dict):
+                      summary = record["summary"]
+                      payload.update({key: summary.get(key, payload.get(key)) for key in payload.keys() if key in summary})
+
+          if progress_path.exists():
+              try:
+                  progress = json.loads(progress_path.read_text(encoding="utf-8"))
+              except json.JSONDecodeError:
+                  progress = {}
+              pending = progress.get("pending") if isinstance(progress.get("pending"), list) else []
+              summary = progress.get("summary") if isinstance(progress.get("summary"), dict) else {}
+              payload["status"] = progress.get("status", payload["status"])
+              payload["remaining"] = len(pending)
+              for key in ("symbols", "processed", "succeeded", "failed", "updated", "rows", "retried"):
+                  if key in summary:
+                      payload[key] = summary[key]
+          elif payload["symbols"] and payload["processed"] >= payload["symbols"]:
+              payload["status"] = "completed"
+
+          summary_path.parent.mkdir(parents=True, exist_ok=True)
+          summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+          line = (
+              f"Shard {market}: outcome={payload['outcome']}, status={payload['status']}, "
+              f"succeeded={payload['succeeded']}, failed={payload['failed']}, remaining={payload['remaining']}, "
+              f"updated={payload['updated']}, rows={payload['rows']}, retried={payload['retried']}"
+          )
+          print(line)
+          with open(github_step_summary, "a", encoding="utf-8") as fh:
+              fh.write(f"### Shard {market} report\n")
+              fh.write("\n")
+              fh.write(f"- outcome: {payload['outcome']}\n")
+              fh.write(f"- status: {payload['status']}\n")
+              fh.write(f"- succeeded: {payload['succeeded']}\n")
+              fh.write(f"- failed: {payload['failed']}\n")
+              fh.write(f"- remaining: {payload['remaining']}\n")
+              fh.write(f"- updated: {payload['updated']}\n")
+              fh.write(f"- rows: {payload['rows']}\n")
+              fh.write(f"- retried: {payload['retried']}\n\n")
+          PY
       - name: Upload shard state
         if: always()
         uses: actions/upload-artifact@v4
@@ -94,6 +180,8 @@ jobs:
           path: |
             ${{ env.SHARD_DB_PATH }}
             ${{ env.SHARD_PROGRESS_PATH }}
+            ${{ env.SHARD_LOG_PATH }}
+            ${{ env.SHARD_SUMMARY_PATH }}
       - name: Save shard cache
         if: always()
         uses: actions/cache/save@v4
@@ -128,6 +216,80 @@ jobs:
           path: data/shards
           pattern: sync-shard-*
           merge-multiple: true
+      - name: Report shard rollout summary
+        id: shard_report
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summaries = []
+          for path in sorted(Path("data/shards").glob("shard-summary-*.json")):
+            try:
+              summaries.append(json.loads(path.read_text(encoding="utf-8")))
+            except json.JSONDecodeError:
+              continue
+
+          github_output = os.environ["GITHUB_OUTPUT"]
+          github_step_summary = os.environ["GITHUB_STEP_SUMMARY"]
+
+          if not summaries:
+            print("No shard summary artifacts found")
+            with open(github_output, "a", encoding="utf-8") as fh:
+              fh.write("all_shards_ok=false\n")
+            with open(github_step_summary, "a", encoding="utf-8") as fh:
+              fh.write("### Shard rollout summary\n\n- no shard summary artifacts found\n")
+            raise SystemExit(0)
+
+          totals = {
+            "symbols": sum(int(item.get("symbols", 0) or 0) for item in summaries),
+            "processed": sum(int(item.get("processed", 0) or 0) for item in summaries),
+            "succeeded": sum(int(item.get("succeeded", 0) or 0) for item in summaries),
+            "failed": sum(int(item.get("failed", 0) or 0) for item in summaries),
+            "remaining": sum(int(item.get("remaining", 0) or 0) for item in summaries),
+            "updated": sum(int(item.get("updated", 0) or 0) for item in summaries),
+            "rows": sum(int(item.get("rows", 0) or 0) for item in summaries),
+            "retried": sum(int(item.get("retried", 0) or 0) for item in summaries),
+          }
+          all_ok = all(
+            item.get("outcome") == "success"
+            and item.get("status") == "completed"
+            and int(item.get("failed", 0) or 0) == 0
+            and int(item.get("remaining", 0) or 0) == 0
+            for item in summaries
+          )
+
+          print("Shard rollout summary:")
+          for item in summaries:
+            print(
+              f"  {item.get('market')}: outcome={item.get('outcome')}, status={item.get('status')}, "
+              f"succeeded={item.get('succeeded')}, failed={item.get('failed')}, remaining={item.get('remaining')}, "
+              f"updated={item.get('updated')}, rows={item.get('rows')}, retried={item.get('retried')}"
+            )
+          print(
+            f"  totals: symbols={totals['symbols']}, processed={totals['processed']}, succeeded={totals['succeeded']}, "
+            f"failed={totals['failed']}, remaining={totals['remaining']}, updated={totals['updated']}, rows={totals['rows']}, retried={totals['retried']}"
+          )
+
+          with open(github_output, "a", encoding="utf-8") as fh:
+            fh.write(f"all_shards_ok={'true' if all_ok else 'false'}\n")
+
+          with open(github_step_summary, "a", encoding="utf-8") as fh:
+            fh.write("### Shard rollout summary\n\n")
+            for item in summaries:
+              fh.write(
+                f"- {item.get('market')}: outcome={item.get('outcome')}, status={item.get('status')}, "
+                f"succeeded={item.get('succeeded')}, failed={item.get('failed')}, remaining={item.get('remaining')}, "
+                f"updated={item.get('updated')}, rows={item.get('rows')}, retried={item.get('retried')}\n"
+              )
+            fh.write(
+              f"\n- totals: symbols={totals['symbols']}, processed={totals['processed']}, succeeded={totals['succeeded']}, "
+              f"failed={totals['failed']}, remaining={totals['remaining']}, updated={totals['updated']}, rows={totals['rows']}, retried={totals['retried']}\n"
+            )
+            fh.write(f"- all_shards_ok: {'true' if all_ok else 'false'}\n")
+          PY
       - name: Merge shard SQLite caches
         run: |
           mkdir -p data
@@ -146,7 +308,7 @@ jobs:
           if-no-files-found: ignore
           path: data/candles.db
       - name: Upload merged SQLite cache to VPS
-        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_DATA_DIR != ''
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.VPS_HOST }}
