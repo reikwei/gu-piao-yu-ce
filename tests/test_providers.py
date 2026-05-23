@@ -83,8 +83,42 @@ class ProviderSymbolListTests(unittest.TestCase):
 
 
 class ProviderDailyFetchTests(unittest.TestCase):
-    def test_akshare_bj_daily_fetch_falls_back_to_unadjusted_history(self):
+    def test_akshare_bj_daily_fetch_prefers_sina_daily_source(self):
+        hist_calls = []
+
+        def stock_zh_a_daily(symbol, start_date, end_date, adjust):
+            self.assertEqual(symbol, "bj920001")
+            self.assertEqual(adjust, "")
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [10.0],
+                    "high": [10.5],
+                    "low": [9.8],
+                    "close": [10.2],
+                    "volume": [1000],
+                    "amount": [10200],
+                }
+            )
+
+        def stock_zh_a_hist(*args, **kwargs):
+            hist_calls.append((args, kwargs))
+            return pd.DataFrame()
+
+        fake_ak = SimpleNamespace(stock_zh_a_daily=stock_zh_a_daily, stock_zh_a_hist=stock_zh_a_hist)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 1))
+
+        self.assertEqual(len(hist_calls), 0)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].close, 10.2)
+
+    def test_akshare_bj_daily_fetch_falls_back_to_unadjusted_history_when_sina_fails(self):
         calls = []
+
+        def stock_zh_a_daily(symbol, start_date, end_date, adjust):
+            raise RuntimeError("sina offline")
 
         def stock_zh_a_hist(symbol, period, start_date, end_date, adjust):
             calls.append(adjust)
@@ -102,7 +136,7 @@ class ProviderDailyFetchTests(unittest.TestCase):
                 )
             return pd.DataFrame()
 
-        fake_ak = SimpleNamespace(stock_zh_a_hist=stock_zh_a_hist)
+        fake_ak = SimpleNamespace(stock_zh_a_daily=stock_zh_a_daily, stock_zh_a_hist=stock_zh_a_hist)
 
         with patch.dict("sys.modules", {"akshare": fake_ak}):
             result = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 1))

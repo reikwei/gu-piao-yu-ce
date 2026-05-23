@@ -93,15 +93,15 @@ jobs:
           - shard: bj-early
             market: bj
             prefixes: 9200,9201,9202
-            providers: akshare,tushare
+            providers: akshare
           - shard: bj-mid
             market: bj
             prefixes: 9203,9204,9205
-            providers: akshare,tushare
+            providers: akshare
           - shard: bj-late
             market: bj
             prefixes: 9206,9207,9208,9209
-            providers: akshare,tushare
+            providers: akshare
     env:
       TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
       DATA_PROVIDERS: ${{ matrix.providers }}

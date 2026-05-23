@@ -48,7 +48,14 @@ class AkShareDailyProvider:
             raise ProviderError("akshare is not installed") from exc
 
         code = normalize_symbol(symbol)
+        market = infer_a_share_market(code)
         errors: list[str] = []
+        if market == "bj":
+            try:
+                return _fetch_bj_daily_from_akshare_sina(ak, code, start_date)
+            except ProviderError as exc:
+                errors.append(f"sina: {exc}")
+
         frame = None
         for adjust in _akshare_hist_adjusts(code):
             try:
@@ -60,34 +67,20 @@ class AkShareDailyProvider:
                     adjust=adjust,
                 )
             except Exception as exc:
-                errors.append(f"adjust={adjust or 'none'}: {exc}")
+                prefix = "eastmoney " if market == "bj" else ""
+                errors.append(f"{prefix}adjust={adjust or 'none'}: {exc}")
                 continue
             if frame is not None and not frame.empty:
                 break
-            errors.append(f"adjust={adjust or 'none'}: returned no rows")
+            prefix = "eastmoney " if market == "bj" else ""
+            errors.append(f"{prefix}adjust={adjust or 'none'}: returned no rows")
 
         if frame is None or frame.empty:
             if errors:
                 raise ProviderError("; ".join(errors))
             raise ProviderError("akshare returned no rows")
 
-        candles: list[Candle] = []
-        for _, row in frame.iterrows():
-            try:
-                candles.append(
-                    Candle(
-                        date=_parse_date(row["日期"]),
-                        open=float(row["开盘"]),
-                        high=float(row["最高"]),
-                        low=float(row["最低"]),
-                        close=float(row["收盘"]),
-                        volume=float(row["成交量"]),
-                        amount=float(row["成交额"]) if "成交额" in row and row["成交额"] is not None else None,
-                    )
-                )
-            except KeyError as exc:
-                raise ProviderError(f"akshare schema changed, missing {exc}") from exc
-        return candles
+        return _build_candles_from_akshare_hist(frame)
 
 
 class BaoStockDailyProvider:
@@ -269,6 +262,73 @@ def _akshare_hist_adjusts(symbol: str) -> tuple[str, ...]:
     if infer_a_share_market(symbol) == "bj":
         return ("", "qfq", "hfq")
     return ("qfq",)
+
+
+def _fetch_bj_daily_from_akshare_sina(ak: object, symbol: str, start_date: date | None) -> list[Candle]:
+    try:
+        frame = ak.stock_zh_a_daily(
+            symbol=_akshare_sina_symbol(symbol),
+            start_date=_format_compact_date(start_date),
+            end_date="20500101",
+            adjust="",
+        )
+    except Exception as exc:
+        raise ProviderError(str(exc)) from exc
+    if frame is None or frame.empty:
+        raise ProviderError("returned no rows")
+    return _build_candles_from_akshare_sina(frame)
+
+
+def _build_candles_from_akshare_hist(frame) -> list[Candle]:
+    candles: list[Candle] = []
+    for _, row in frame.iterrows():
+        try:
+            candles.append(
+                Candle(
+                    date=_parse_date(row["日期"]),
+                    open=float(row["开盘"]),
+                    high=float(row["最高"]),
+                    low=float(row["最低"]),
+                    close=float(row["收盘"]),
+                    volume=float(row["成交量"]),
+                    amount=float(row["成交额"]) if "成交额" in row and row["成交额"] is not None else None,
+                )
+            )
+        except KeyError as exc:
+            raise ProviderError(f"akshare schema changed, missing {exc}") from exc
+    return candles
+
+
+def _build_candles_from_akshare_sina(frame) -> list[Candle]:
+    candles: list[Candle] = []
+    for _, row in frame.iterrows():
+        try:
+            candles.append(
+                Candle(
+                    date=_parse_date(row["date"]),
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=float(row["volume"]),
+                    amount=float(row["amount"]) if "amount" in row and row["amount"] is not None else None,
+                )
+            )
+        except KeyError as exc:
+            raise ProviderError(f"akshare sina schema changed, missing {exc}") from exc
+    return candles
+
+
+def _akshare_sina_symbol(symbol: str) -> str:
+    code = normalize_symbol(symbol)
+    market = infer_a_share_market(code)
+    if market == "bj":
+        prefix = "bj"
+    elif market == "sh":
+        prefix = "sh"
+    else:
+        prefix = "sz"
+    return f"{prefix}{code}"
 
 
 def _is_a_share_symbol(symbol: str) -> bool:
