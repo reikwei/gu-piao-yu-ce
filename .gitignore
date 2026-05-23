@@ -3,6 +3,8 @@
 .env
 .env.*
 .github/deploy-memory.md
+.github/copilot-instructions.md
+push_git.bat
 
 # Python cache
 __pycache__/

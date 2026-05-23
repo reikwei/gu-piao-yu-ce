@@ -7,7 +7,7 @@ REM Git 上传脚本 - 自动提交和推送代码到 GitHub
 cd /d %~dp0
 
 if not defined TARGET_REPO set "TARGET_REPO=https://github.com/reikwei/gu-piao-yu-ce.git"
-if not defined GIT_PROXY set "GIT_PROXY=http://127.0.0.1:7890"
+if not defined GIT_PROXY set "GIT_PROXY=http://127.0.0.1:7895"
 if not defined DEFAULT_GIT_USER_NAME set "DEFAULT_GIT_USER_NAME=reikwei"
 if not defined DEFAULT_GIT_USER_EMAIL set "DEFAULT_GIT_USER_EMAIL=host2ez@qq.com"
 
