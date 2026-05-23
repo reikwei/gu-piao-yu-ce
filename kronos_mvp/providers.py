@@ -47,17 +47,27 @@ class AkShareDailyProvider:
             raise ProviderError("akshare is not installed") from exc
 
         code = normalize_symbol(symbol)
-        try:
-            frame = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=_format_compact_date(start_date),
-                end_date="",
-                adjust="qfq",
-            )
-        except Exception as exc:
-            raise ProviderError(str(exc)) from exc
+        errors: list[str] = []
+        frame = None
+        for adjust in _akshare_hist_adjusts(code):
+            try:
+                frame = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    start_date=_format_compact_date(start_date),
+                    end_date="20500101",
+                    adjust=adjust,
+                )
+            except Exception as exc:
+                errors.append(f"adjust={adjust or 'none'}: {exc}")
+                continue
+            if frame is not None and not frame.empty:
+                break
+            errors.append(f"adjust={adjust or 'none'}: returned no rows")
+
         if frame is None or frame.empty:
+            if errors:
+                raise ProviderError("; ".join(errors))
             raise ProviderError("akshare returned no rows")
 
         candles: list[Candle] = []
@@ -83,6 +93,9 @@ class BaoStockDailyProvider:
     name = "baostock"
 
     def fetch_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        if infer_a_share_market(symbol) == "bj":
+            raise ProviderError("baostock does not support BJ A-share history")
+
         try:
             import baostock as bs
         except ImportError as exc:
@@ -221,6 +234,12 @@ def _format_iso_date(value: date | None) -> str:
 
 def _format_compact_date(value: date | None) -> str:
     return value.strftime("%Y%m%d") if value is not None else ""
+
+
+def _akshare_hist_adjusts(symbol: str) -> tuple[str, ...]:
+    if infer_a_share_market(symbol) == "bj":
+        return ("", "qfq", "hfq")
+    return ("qfq",)
 
 
 def _is_a_share_symbol(symbol: str) -> bool:

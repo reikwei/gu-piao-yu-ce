@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from kronos_mvp.providers import ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols
+from kronos_mvp.providers import AkShareDailyProvider, BaoStockDailyProvider, ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols
 
 
 class ProviderSymbolListTests(unittest.TestCase):
@@ -80,6 +80,43 @@ class ProviderSymbolListTests(unittest.TestCase):
 
         self.assertEqual(fake_bs.requested_day, "2026-05-22")
         self.assertEqual(symbols, ["sh.600519", "sz.000001"])
+
+
+class ProviderDailyFetchTests(unittest.TestCase):
+    def test_akshare_bj_daily_fetch_falls_back_to_unadjusted_history(self):
+        calls = []
+
+        def stock_zh_a_hist(symbol, period, start_date, end_date, adjust):
+            calls.append(adjust)
+            if adjust == "":
+                return pd.DataFrame(
+                    {
+                        "日期": ["2026-05-22"],
+                        "开盘": [10.0],
+                        "最高": [10.5],
+                        "最低": [9.8],
+                        "收盘": [10.2],
+                        "成交量": [1000],
+                        "成交额": [10200],
+                    }
+                )
+            return pd.DataFrame()
+
+        fake_ak = SimpleNamespace(stock_zh_a_hist=stock_zh_a_hist)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 1))
+
+        self.assertEqual(calls, [""])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].close, 10.2)
+
+    def test_baostock_daily_fetch_rejects_bj_symbols(self):
+        fake_bs = SimpleNamespace(login=lambda: None)
+
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            with self.assertRaisesRegex(ProviderError, "does not support BJ"):
+                BaoStockDailyProvider().fetch_daily("920001")
 
 
 if __name__ == "__main__":
