@@ -292,10 +292,6 @@ def _call_with_retries(loader, attempts: int = 3):
     if last_exc is not None:
         raise last_exc
     raise ProviderError("loader did not execute")
-    for column in ("code", "代码", "A股代码", "证券代码"):
-        if column in frame.columns:
-            return frame[column].astype(str).tolist()
-    raise ProviderError("akshare symbol schema changed")
 
 
 def _list_symbols_from_baostock() -> list[str]:
