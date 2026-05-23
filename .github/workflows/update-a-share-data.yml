@@ -65,6 +65,7 @@ jobs:
       SHARD_PROGRESS_PATH: data/sync-progress-${{ matrix.market }}.json
       SHARD_LOG_PATH: data/sync-log-${{ matrix.market }}.ndjson
       SHARD_SUMMARY_PATH: data/shard-summary-${{ matrix.market }}.json
+      SHARD_RECOVERY_PASSES: 3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,7 +89,21 @@ jobs:
         run: |
           mkdir -p data
           set -o pipefail
-          python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${{ matrix.market }}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee "${SHARD_LOG_PATH}"
+          : > "${SHARD_LOG_PATH}"
+          pass=1
+          max_passes="${SHARD_RECOVERY_PASSES}"
+          while [ "$pass" -le "$max_passes" ]; do
+            echo "{\"event\":\"sync_pass\",\"market\":\"${{ matrix.market }}\",\"pass\":${pass},\"max_passes\":${max_passes}}" | tee -a "${SHARD_LOG_PATH}"
+            python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${{ matrix.market }}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee -a "${SHARD_LOG_PATH}"
+            status=${PIPESTATUS[0]}
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ ! -f "${SHARD_PROGRESS_PATH}" ] || [ "$pass" -ge "$max_passes" ]; then
+              exit "$status"
+            fi
+            pass=$((pass + 1))
+          done
       - name: Report shard summary
         if: always()
         env:
