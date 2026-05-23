@@ -7,8 +7,8 @@ import os
 from dotenv import load_dotenv
 
 from .predictors import KronosPredictor
-from .providers import build_default_providers
-from .storage import CandleStore
+from .providers import build_default_providers, list_a_share_symbols
+from .storage import CandleStore, normalize_symbol
 from .sync import DataSyncService
 
 
@@ -21,7 +21,8 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sync_parser = subparsers.add_parser("sync", help="sync daily K-line data")
-    sync_parser.add_argument("symbols", nargs="+")
+    sync_parser.add_argument("symbols", nargs="*")
+    sync_parser.add_argument("--all", action="store_true", dest="sync_all", help="sync all A-share symbols")
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
@@ -37,10 +38,49 @@ def main() -> None:
     store = CandleStore(args.db)
 
     if args.command == "sync":
+        if args.sync_all and args.symbols:
+            parser.error("sync --all cannot be combined with explicit symbols")
+        if args.sync_all:
+            symbols = list_a_share_symbols()
+        else:
+            symbols = args.symbols
+        if not symbols:
+            parser.error("sync requires one or more symbols or --all")
+
         service = DataSyncService(store=store, providers=build_default_providers())
-        for symbol in args.symbols:
-            result = service.sync_symbol(symbol)
-            print(json.dumps(result.__dict__, ensure_ascii=False))
+        succeeded = 0
+        failed = 0
+        updated = 0
+        total_rows = 0
+        for symbol in symbols:
+            try:
+                result = service.sync_symbol(symbol)
+                succeeded += 1
+                updated += int(result.rows > 0)
+                total_rows += result.rows
+                print(json.dumps({"ok": True, **result.__dict__}, ensure_ascii=False))
+            except Exception as exc:
+                failed += 1
+                print(json.dumps({"ok": False, "symbol": normalize_symbol(symbol), "error": str(exc)}, ensure_ascii=False))
+                if not args.sync_all:
+                    raise
+        print(
+            json.dumps(
+                {
+                    "summary": {
+                        "mode": "all" if args.sync_all else "symbols",
+                        "symbols": len(symbols),
+                        "succeeded": succeeded,
+                        "failed": failed,
+                        "updated": updated,
+                        "rows": total_rows,
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
+        if succeeded == 0:
+            raise SystemExit(1)
     elif args.command == "predict":
         candles = store.get_latest(args.symbol, limit=args.lookback)
         predictor = KronosPredictor(

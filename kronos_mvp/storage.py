@@ -99,9 +99,24 @@ class CandleStore:
         candles.reverse()
         return candles
 
+    def get_latest_date(self, symbol: str) -> date | None:
+        normalized = normalize_symbol(symbol)
+        with self._connection() as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(date) AS latest_date
+                FROM candles
+                WHERE symbol = ?
+                """,
+                (normalized,),
+            ).fetchone()
+        if row is None or row["latest_date"] is None:
+            return None
+        return date.fromisoformat(row["latest_date"])
+
 
 def normalize_symbol(symbol: str) -> str:
-    return symbol.strip().lower().replace("sh.", "").replace("sz.", "")
+    return symbol.strip().lower().replace("sh.", "").replace("sz.", "").replace("bj.", "")
 
 
 def _row_to_candle(row: sqlite3.Row) -> Candle:

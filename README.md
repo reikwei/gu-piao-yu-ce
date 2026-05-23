@@ -4,14 +4,14 @@
 
 ## 当前能力
 
-- 支持 A 股单只股票日线同步，内置 AkShare、BaoStock、TuShare 多源 fallback。
+- 支持 A 股单只股票预测，也支持按全市场范围同步日线数据，内置 AkShare、BaoStock、TuShare 多源 fallback。
 - 使用 SQLite 缓存历史 K 线，避免每次预测都实时抓网。
 - 通过 Kronos 官方接口适配多路径预测输出。
 - 未来预测日期使用上交所交易日历，不再只按工作日推算。
 - 前端静态页支持运行时 API Base 配置，可直接给 Cloudflare Pages 使用。
 - 网页默认展示 3 条预测路径，点击“预测”会先自动同步最新数据，再发起推理。
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
-- GitHub Actions 可在北京时间收盘后按配置股票列表自动同步数据并上传 SQLite 缓存到 VPS。
+- GitHub Actions 可在北京时间收盘后自动同步全市场 A 股，并把 SQLite 缓存上传到 VPS。
 
 ## 架构
 
@@ -59,6 +59,14 @@ Copy-Item .env.example .env
 ```powershell
 python -m kronos_mvp.cli sync 600519
 ```
+
+如果要在本地先跑一遍全市场同步，可以使用：
+
+```powershell
+python -m kronos_mvp.cli sync --all
+```
+
+第一次全市场同步会比较久；后续同样再跑 `sync --all` 时，会按本地 SQLite 中每只股票的最新日期增量抓取，不再把每只股票整段历史重复写入数据库。
 
 5. 启动本地 API。
 
@@ -121,9 +129,10 @@ python -m unittest discover -s tests -v
 工作流文件是 [.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)。
 
 - 默认在 UTC 08:30 执行，对应北京时间 16:30
+- 默认按全市场 A 股执行同步；如果手动触发时填写 symbols，则只同步传入的股票列表。
 - 只安装同步任务所需依赖，不安装完整推理依赖
-- 当前这个每日任务不是全市场扫库，而是按工作流里配置的股票列表批量同步。
-- 定时触发时如果没有额外传入 symbols，会回退到工作流里写死的默认列表，目前是 600519 和 000001。
+- 第一次跑全市场会最慢；后续每日任务会根据本地 SQLite 已有的最新日期，对每只股票做增量同步。
+- 工作流启用了并发互斥和更长超时，避免上一次全市场任务还没结束时下一次调度重叠。
 - 网页上的“仅同步缓存”按钮主要用于手动补拉某只股票或临时刷新缓存。
 - 可选 Secrets：
 
@@ -137,8 +146,8 @@ python -m unittest discover -s tests -v
 
 ### Git 上传规则
 
-- 要上传到 GitHub：源码、[.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)、[.github/copilot-instructions.md](.github/copilot-instructions.md)、README、部署模板。
-- 不要上传到 GitHub：.venv、.env、data 目录、本地 SQLite、任何私钥、Token、密码或服务器私密文件。
+- 要上传到 GitHub：源码、[.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)、README、部署模板。
+- 不要上传到 GitHub：.venv、.env、data 目录、本地 SQLite、[.github/deploy-memory.md](.github/deploy-memory.md)、任何私钥、Token、密码或服务器私密文件。
 - 不要忽略整个 .github 目录；如果 .github 不上传，GitHub Actions 就不会生效。
 
 ### Secrets 怎么填

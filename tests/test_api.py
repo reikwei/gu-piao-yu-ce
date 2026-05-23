@@ -66,7 +66,7 @@ class ApiTests(unittest.TestCase):
             env = {
                 "KLINE_DB_PATH": str(Path(tmp) / "candles.db"),
                 "APP_API_BASE_URL": "https://api.example.com",
-                "APP_SITE_TITLE": "夜色电报量化研究",
+                "APP_SITE_TITLE": "土豆A股预测研究",
             }
             with patch.dict(os.environ, env, clear=False):
                 client = TestClient(create_app())
@@ -75,7 +75,7 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("https://api.example.com", response.text)
-        self.assertIn("夜色电报量化研究", response.text)
+        self.assertIn("土豆A股预测研究", response.text)
 
     def test_cors_allows_configured_pages_origin(self):
         with tempfile.TemporaryDirectory() as tmp:

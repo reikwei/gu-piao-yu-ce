@@ -1,19 +1,23 @@
 name: Update A-share K-line Data
 
+concurrency:
+  group: a-share-kline-sync
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Space-separated stock symbols"
+        description: "Optional space-separated stock symbols; leave blank to sync all A-shares"
         required: false
-        default: "600519 000001"
+        default: ""
   schedule:
     - cron: "30 8 * * 1-5"
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 360
     env:
       KLINE_DB_PATH: data/candles.db
       TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
@@ -34,8 +38,11 @@ jobs:
       - name: Sync data
         run: |
           SYMBOLS="${{ github.event.inputs.symbols }}"
-          if [ -z "$SYMBOLS" ]; then SYMBOLS="600519 000001"; fi
-          python -m kronos_mvp.cli sync $SYMBOLS
+          if [ -n "$SYMBOLS" ]; then
+            python -m kronos_mvp.cli sync $SYMBOLS
+          else
+            python -m kronos_mvp.cli sync --all
+          fi
       - name: Upload SQLite cache to VPS
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_DATA_DIR != ''
         uses: appleboy/scp-action@v0.1.7
