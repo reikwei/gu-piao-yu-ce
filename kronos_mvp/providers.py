@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from .models import Candle
 from .storage import normalize_symbol
@@ -265,7 +267,7 @@ def _list_symbols_from_baostock() -> list[str]:
     if login.error_code != "0":
         raise ProviderError(f"baostock login failed: {login.error_msg}")
     try:
-        result = bs.query_all_stock()
+        result = bs.query_all_stock(day=_latest_a_share_trading_day().isoformat())
         if result.error_code != "0":
             raise ProviderError(result.error_msg)
         rows: list[str] = []
@@ -316,3 +318,28 @@ def _tushare_symbol(symbol: str) -> str:
     elif not code.startswith("6"):
         suffix = "SZ"
     return f"{code}.{suffix}"
+
+
+@lru_cache(maxsize=1)
+def _get_a_share_calendar():
+    try:
+        import exchange_calendars as xcals
+    except ImportError as exc:
+        raise RuntimeError(
+            "exchange_calendars is required for A-share symbol discovery. "
+            "Install project requirements before syncing all symbols."
+        ) from exc
+    return xcals.get_calendar("XSHG")
+
+
+def _latest_a_share_trading_day() -> date:
+    import pandas as pd
+
+    shanghai_today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    calendar = _get_a_share_calendar()
+    start = pd.Timestamp(shanghai_today - timedelta(days=14))
+    end = pd.Timestamp(shanghai_today)
+    sessions = calendar.sessions_in_range(start, end)
+    if len(sessions) == 0:
+        raise ProviderError("unable to resolve latest A-share trading day")
+    return sessions[-1].date()
