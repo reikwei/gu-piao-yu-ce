@@ -52,21 +52,26 @@ class AkShareDailyProvider:
         errors: list[str] = []
         if market == "bj":
             try:
-                return _fetch_bj_daily_from_akshare_sina(ak, code, start_date)
+                return _fetch_akshare_sina_daily(ak, code, start_date, adjust="")
             except ProviderError as exc:
                 errors.append(f"sina: {exc}")
 
         frame = None
+        saw_hist_exception = False
         for adjust in _akshare_hist_adjusts(code):
             try:
-                frame = ak.stock_zh_a_hist(
-                    symbol=code,
-                    period="daily",
-                    start_date=_format_compact_date(start_date),
-                    end_date="20500101",
-                    adjust=adjust,
+                frame = _call_with_retries(
+                    lambda adjust=adjust: ak.stock_zh_a_hist(
+                        symbol=code,
+                        period="daily",
+                        start_date=_format_compact_date(start_date),
+                        end_date="20500101",
+                        adjust=adjust,
+                    ),
+                    attempts=3,
                 )
             except Exception as exc:
+                saw_hist_exception = True
                 prefix = "eastmoney " if market == "bj" else ""
                 errors.append(f"{prefix}adjust={adjust or 'none'}: {exc}")
                 continue
@@ -76,6 +81,11 @@ class AkShareDailyProvider:
             errors.append(f"{prefix}adjust={adjust or 'none'}: returned no rows")
 
         if frame is None or frame.empty:
+            if market != "bj" and saw_hist_exception:
+                try:
+                    return _fetch_akshare_sina_daily(ak, code, start_date, adjust="qfq")
+                except ProviderError as exc:
+                    errors.append(f"sina adjust=qfq: {exc}")
             if errors:
                 raise ProviderError("; ".join(errors))
             raise ProviderError("akshare returned no rows")
@@ -266,11 +276,14 @@ def _akshare_hist_adjusts(symbol: str) -> tuple[str, ...]:
     return ("qfq",)
 
 
-def _fetch_bj_daily_from_akshare_sina(ak: object, symbol: str, start_date: date | None) -> list[Candle]:
+def _fetch_akshare_sina_daily(ak: object, symbol: str, start_date: date | None, adjust: str) -> list[Candle]:
     try:
-        frame = ak.stock_zh_a_daily(
-            symbol=_akshare_sina_symbol(symbol),
-            adjust="",
+        frame = _call_with_retries(
+            lambda: ak.stock_zh_a_daily(
+                symbol=_akshare_sina_symbol(symbol),
+                adjust=adjust,
+            ),
+            attempts=3,
         )
     except Exception as exc:
         raise ProviderError(str(exc)) from exc

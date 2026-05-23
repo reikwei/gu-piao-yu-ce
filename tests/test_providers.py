@@ -94,6 +94,37 @@ class ProviderSymbolListTests(unittest.TestCase):
 
 
 class ProviderDailyFetchTests(unittest.TestCase):
+    def test_akshare_bj_daily_fetch_retries_sina_before_fallback(self):
+        daily_calls = []
+
+        def stock_zh_a_daily(symbol, adjust):
+            daily_calls.append((symbol, adjust))
+            if len(daily_calls) < 3:
+                raise RuntimeError("temporary outage")
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [10.0],
+                    "high": [10.5],
+                    "low": [9.8],
+                    "close": [10.2],
+                    "volume": [1000],
+                    "amount": [10200],
+                }
+            )
+
+        def stock_zh_a_hist(*args, **kwargs):
+            raise AssertionError("should not use history fallback when sina retry succeeds")
+
+        fake_ak = SimpleNamespace(stock_zh_a_daily=stock_zh_a_daily, stock_zh_a_hist=stock_zh_a_hist)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 1))
+
+        self.assertEqual(len(daily_calls), 3)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].close, 10.2)
+
     def test_akshare_bj_daily_fetch_prefers_sina_daily_source(self):
         hist_calls = []
 
@@ -122,6 +153,37 @@ class ProviderDailyFetchTests(unittest.TestCase):
             result = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 1))
 
         self.assertEqual(len(hist_calls), 0)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].close, 10.2)
+
+    def test_akshare_non_bj_daily_fetch_falls_back_to_sina_when_hist_raises(self):
+        hist_calls = []
+
+        def stock_zh_a_daily(symbol, adjust):
+            self.assertEqual(symbol, "sz300001")
+            self.assertEqual(adjust, "qfq")
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [10.0],
+                    "high": [10.5],
+                    "low": [9.8],
+                    "close": [10.2],
+                    "volume": [1000],
+                    "amount": [10200],
+                }
+            )
+
+        def stock_zh_a_hist(symbol, period, start_date, end_date, adjust):
+            hist_calls.append(adjust)
+            raise RuntimeError("eastmoney offline")
+
+        fake_ak = SimpleNamespace(stock_zh_a_daily=stock_zh_a_daily, stock_zh_a_hist=stock_zh_a_hist)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("300001", start_date=date(2026, 5, 1))
+
+        self.assertEqual(hist_calls, ["qfq", "qfq", "qfq"])
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].close, 10.2)
 
