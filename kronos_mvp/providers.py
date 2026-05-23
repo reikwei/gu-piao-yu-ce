@@ -268,13 +268,17 @@ def _fetch_bj_daily_from_akshare_sina(ak: object, symbol: str, start_date: date 
     try:
         frame = ak.stock_zh_a_daily(
             symbol=_akshare_sina_symbol(symbol),
-            start_date=_format_compact_date(start_date),
-            end_date="20500101",
             adjust="",
         )
     except Exception as exc:
         raise ProviderError(str(exc)) from exc
     if frame is None or frame.empty:
+        raise ProviderError("returned no rows")
+    frame = frame.copy()
+    frame["date"] = frame["date"].map(_parse_date)
+    if start_date is not None:
+        frame = frame[frame["date"] >= start_date]
+    if frame.empty:
         raise ProviderError("returned no rows")
     return _build_candles_from_akshare_sina(frame)
 

@@ -86,18 +86,18 @@ class ProviderDailyFetchTests(unittest.TestCase):
     def test_akshare_bj_daily_fetch_prefers_sina_daily_source(self):
         hist_calls = []
 
-        def stock_zh_a_daily(symbol, start_date, end_date, adjust):
+        def stock_zh_a_daily(symbol, adjust):
             self.assertEqual(symbol, "bj920001")
             self.assertEqual(adjust, "")
             return pd.DataFrame(
                 {
-                    "date": ["2026-05-22"],
-                    "open": [10.0],
-                    "high": [10.5],
-                    "low": [9.8],
-                    "close": [10.2],
-                    "volume": [1000],
-                    "amount": [10200],
+                    "date": ["2026-04-30", "2026-05-22"],
+                    "open": [9.0, 10.0],
+                    "high": [9.5, 10.5],
+                    "low": [8.8, 9.8],
+                    "close": [9.2, 10.2],
+                    "volume": [900, 1000],
+                    "amount": [9200, 10200],
                 }
             )
 
@@ -117,7 +117,7 @@ class ProviderDailyFetchTests(unittest.TestCase):
     def test_akshare_bj_daily_fetch_falls_back_to_unadjusted_history_when_sina_fails(self):
         calls = []
 
-        def stock_zh_a_daily(symbol, start_date, end_date, adjust):
+        def stock_zh_a_daily(symbol, adjust):
             raise RuntimeError("sina offline")
 
         def stock_zh_a_hist(symbol, period, start_date, end_date, adjust):
