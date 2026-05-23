@@ -181,7 +181,7 @@ def list_a_share_symbols(market: str = "all") -> list[str]:
     for name in _configured_provider_names():
         try:
             if name == "akshare":
-                symbols = _list_symbols_from_akshare()
+                symbols = _list_symbols_from_akshare(market=market)
             elif name == "baostock":
                 symbols = _list_symbols_from_baostock()
             elif name == "tushare":
@@ -239,18 +239,59 @@ def infer_a_share_market(symbol: str) -> str:
     return "sz"
 
 
-def _list_symbols_from_akshare() -> list[str]:
+def _list_symbols_from_akshare(market: str = "all") -> list[str]:
     try:
         import akshare as ak
     except ImportError as exc:
         raise ProviderError("akshare is not installed") from exc
 
-    try:
-        frame = ak.stock_info_a_code_name()
-    except Exception as exc:
-        raise ProviderError(str(exc)) from exc
-    if frame is None or frame.empty:
-        raise ProviderError("akshare returned no symbols")
+    errors: list[str] = []
+    for loader in _akshare_symbol_loaders(ak, market):
+        try:
+            frame = _call_with_retries(loader, attempts=3)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if frame is None or frame.empty:
+            errors.append("akshare returned no symbols")
+            continue
+
+        for column in ("code", "代码", "A股代码", "证券代码"):
+            if column in frame.columns:
+                return frame[column].astype(str).tolist()
+        errors.append("akshare symbol schema changed")
+
+    raise ProviderError("; ".join(errors) if errors else "akshare returned no symbols")
+
+
+def _akshare_symbol_loaders(ak: object, market: str):
+    loader_names = {
+        "all": ["stock_info_a_code_name"],
+        "sh": ["stock_info_sh_name_code", "stock_info_a_code_name"],
+        "sz": ["stock_info_sz_name_code", "stock_info_a_code_name"],
+        "bj": ["stock_info_bj_name_code", "stock_info_a_code_name"],
+    }.get(market, ["stock_info_a_code_name"])
+
+    loaders = []
+    for name in loader_names:
+        loader = getattr(ak, name, None)
+        if callable(loader):
+            loaders.append(loader)
+    if not loaders:
+        raise ProviderError("akshare does not expose a stock symbol loader for this market")
+    return loaders
+
+
+def _call_with_retries(loader, attempts: int = 3):
+    last_exc: Exception | None = None
+    for _ in range(max(1, attempts)):
+        try:
+            return loader()
+        except Exception as exc:  # pragma: no cover - exercised via provider tests with injected failures
+            last_exc = exc
+    if last_exc is not None:
+        raise last_exc
+    raise ProviderError("loader did not execute")
     for column in ("code", "代码", "A股代码", "证券代码"):
         if column in frame.columns:
             return frame[column].astype(str).tolist()

@@ -4,7 +4,9 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from kronos_mvp.providers import ProviderError, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols
+import pandas as pd
+
+from kronos_mvp.providers import ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols
 
 
 class ProviderSymbolListTests(unittest.TestCase):
@@ -20,6 +22,17 @@ class ProviderSymbolListTests(unittest.TestCase):
         self.assertEqual(list_a_share_symbols(market="sh"), ["600519"])
         self.assertEqual(list_a_share_symbols(market="sz"), ["000001"])
         self.assertEqual(list_a_share_symbols(market="bj"), ["920001"])
+
+    def test_akshare_symbol_lookup_uses_market_specific_loader_when_available(self):
+        fake_ak = SimpleNamespace(
+            stock_info_bj_name_code=lambda: pd.DataFrame({"证券代码": ["920001", "430001"]}),
+            stock_info_a_code_name=lambda: pd.DataFrame({"证券代码": ["600519"]}),
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            symbols = _list_symbols_from_akshare(market="bj")
+
+        self.assertEqual(symbols, ["920001", "430001"])
 
     def test_infer_a_share_market_maps_supported_exchanges(self):
         self.assertEqual(infer_a_share_market("600519"), "sh")
