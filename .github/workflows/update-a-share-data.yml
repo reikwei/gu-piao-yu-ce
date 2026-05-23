@@ -84,7 +84,7 @@ jobs:
             providers: akshare,baostock,tushare
           - shard: sz-002
             market: sz
-            prefixes: 002
+            prefixes: "002"
             providers: akshare,baostock,tushare
           - shard: sz-00
             market: sz

@@ -34,6 +34,17 @@ class ProviderSymbolListTests(unittest.TestCase):
 
         self.assertEqual(symbols, ["920001", "430001"])
 
+    def test_akshare_symbol_lookup_merges_sh_loader_with_all_market_loader(self):
+        fake_ak = SimpleNamespace(
+            stock_info_sh_name_code=lambda: pd.DataFrame({"证券代码": ["600519", "601398"]}),
+            stock_info_a_code_name=lambda: pd.DataFrame({"证券代码": ["600519", "688001", "689009", "300001"]}),
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            symbols = _list_symbols_from_akshare(market="sh")
+
+        self.assertEqual(symbols, ["600519", "601398", "688001", "689009"])
+
     def test_infer_a_share_market_maps_supported_exchanges(self):
         self.assertEqual(infer_a_share_market("600519"), "sh")
         self.assertEqual(infer_a_share_market("000001"), "sz")
@@ -199,6 +210,37 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual(fake_bs.login_calls, 1)
         self.assertEqual(fake_bs.query_calls, 2)
         self.assertEqual(fake_bs.logout_calls, 1)
+
+    def test_baostock_incremental_fetch_returns_empty_list_when_no_new_rows(self):
+        class FakeLoginResult:
+            error_code = "0"
+            error_msg = ""
+
+        class FakeQueryResult:
+            error_code = "0"
+            error_msg = ""
+
+            def next(self):
+                return False
+
+            def get_row_data(self):
+                raise AssertionError("should not be called")
+
+        class FakeBaoStock:
+            def login(self):
+                return FakeLoginResult()
+
+            def logout(self):
+                return None
+
+            def query_history_k_data_plus(self, *args, **kwargs):
+                return FakeQueryResult()
+
+        fake_bs = FakeBaoStock()
+        with patch.dict("sys.modules", {"baostock": fake_bs}):
+            rows = BaoStockDailyProvider().fetch_daily("600519", start_date=date(2026, 5, 23))
+
+        self.assertEqual(rows, [])
 
 
 if __name__ == "__main__":

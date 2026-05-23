@@ -145,6 +145,8 @@ class BaoStockDailyProvider:
             rows.append(result.get_row_data())
 
         if not rows:
+            if start_date is not None:
+                return []
             raise ProviderError("baostock returned no rows")
         return [
             Candle(
@@ -358,6 +360,7 @@ def _list_symbols_from_akshare(market: str = "all") -> list[str]:
         raise ProviderError("akshare is not installed") from exc
 
     errors: list[str] = []
+    collected: list[str] = []
     for loader in _akshare_symbol_loaders(ak, market):
         try:
             frame = _call_with_retries(loader, attempts=3)
@@ -370,8 +373,17 @@ def _list_symbols_from_akshare(market: str = "all") -> list[str]:
 
         for column in ("code", "代码", "A股代码", "证券代码"):
             if column in frame.columns:
-                return frame[column].astype(str).tolist()
-        errors.append("akshare symbol schema changed")
+                collected.extend(frame[column].astype(str).tolist())
+                break
+        else:
+            errors.append("akshare symbol schema changed")
+
+    normalized = _normalize_symbol_candidates(collected, market=market)
+    if normalized:
+        return normalized
+
+    if collected:
+        raise ProviderError("returned no A-share symbols")
 
     raise ProviderError("; ".join(errors) if errors else "akshare returned no symbols")
 
@@ -447,6 +459,22 @@ def _list_symbols_from_tushare(token: str | None) -> list[str]:
     if frame is None or frame.empty or "ts_code" not in frame.columns:
         raise ProviderError("tushare returned no symbols")
     return frame["ts_code"].astype(str).tolist()
+
+
+def _normalize_symbol_candidates(symbols: list[str], market: str) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for symbol in symbols:
+        code = normalize_symbol(symbol)
+        if not _is_a_share_symbol(code):
+            continue
+        if market != "all" and infer_a_share_market(code) != market:
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        normalized.append(code)
+    return normalized
 
 
 def _baostock_symbol(symbol: str) -> str:
