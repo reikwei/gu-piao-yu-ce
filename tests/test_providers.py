@@ -94,6 +94,63 @@ class ProviderSymbolListTests(unittest.TestCase):
 
 
 class ProviderDailyFetchTests(unittest.TestCase):
+    def test_akshare_cdr_daily_fetch_uses_cdr_source_for_689_symbols(self):
+        cdr_calls = []
+
+        def stock_zh_a_cdr_daily(symbol, start_date, end_date):
+            cdr_calls.append((symbol, start_date, end_date))
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [42.95],
+                    "high": [43.58],
+                    "low": [42.54],
+                    "close": [42.68],
+                    "volume": [11236541],
+                    "amount": [483102680],
+                }
+            )
+
+        def stock_zh_a_daily(*args, **kwargs):
+            raise AssertionError("should not use regular sina daily for 689 symbols")
+
+        def stock_zh_a_hist(*args, **kwargs):
+            raise AssertionError("should not use eastmoney hist for 689 symbols when cdr source succeeds")
+
+        fake_ak = SimpleNamespace(
+            stock_zh_a_cdr_daily=stock_zh_a_cdr_daily,
+            stock_zh_a_daily=stock_zh_a_daily,
+            stock_zh_a_hist=stock_zh_a_hist,
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("689009", start_date=date(2026, 5, 1))
+
+        self.assertEqual(cdr_calls, [("sh689009", "20260501", "20500101")])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].close, 42.68)
+
+    def test_akshare_cdr_daily_incremental_fetch_returns_empty_list_when_no_new_rows(self):
+        def stock_zh_a_cdr_daily(symbol, start_date, end_date):
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [42.95],
+                    "high": [43.58],
+                    "low": [42.54],
+                    "close": [42.68],
+                    "volume": [11236541],
+                    "amount": [483102680],
+                }
+            )
+
+        fake_ak = SimpleNamespace(stock_zh_a_cdr_daily=stock_zh_a_cdr_daily)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            rows = AkShareDailyProvider().fetch_daily("689009", start_date=date(2026, 5, 23))
+
+        self.assertEqual(rows, [])
+
     def test_akshare_bj_daily_fetch_retries_sina_before_fallback(self):
         daily_calls = []
 

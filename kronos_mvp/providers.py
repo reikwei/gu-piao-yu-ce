@@ -50,6 +50,12 @@ class AkShareDailyProvider:
         code = normalize_symbol(symbol)
         market = infer_a_share_market(code)
         errors: list[str] = []
+        if _is_akshare_cdr_symbol(code):
+            try:
+                return _fetch_akshare_cdr_daily(ak, code, start_date)
+            except ProviderError as exc:
+                errors.append(f"cdr: {exc}")
+
         if market == "bj":
             try:
                 return _fetch_akshare_sina_daily(ak, code, start_date, adjust="")
@@ -300,6 +306,31 @@ def _fetch_akshare_sina_daily(ak: object, symbol: str, start_date: date | None, 
     return _build_candles_from_akshare_sina(frame)
 
 
+def _fetch_akshare_cdr_daily(ak: object, symbol: str, start_date: date | None) -> list[Candle]:
+    try:
+        frame = _call_with_retries(
+            lambda: ak.stock_zh_a_cdr_daily(
+                symbol=_akshare_sina_symbol(symbol),
+                start_date=_format_compact_date(start_date) or "19900101",
+                end_date="20500101",
+            ),
+            attempts=3,
+        )
+    except Exception as exc:
+        raise ProviderError(str(exc)) from exc
+    if frame is None or frame.empty:
+        if start_date is not None:
+            return []
+        raise ProviderError("returned no rows")
+    frame = frame.copy()
+    frame["date"] = frame["date"].map(_parse_date)
+    if start_date is not None:
+        frame = frame[frame["date"] >= start_date]
+    if frame.empty:
+        return []
+    return _build_candles_from_akshare_sina(frame)
+
+
 def _build_candles_from_akshare_hist(frame) -> list[Candle]:
     candles: list[Candle] = []
     for _, row in frame.iterrows():
@@ -350,6 +381,10 @@ def _akshare_sina_symbol(symbol: str) -> str:
     else:
         prefix = "sz"
     return f"{prefix}{code}"
+
+
+def _is_akshare_cdr_symbol(symbol: str) -> bool:
+    return normalize_symbol(symbol).startswith("689")
 
 
 def _is_a_share_symbol(symbol: str) -> bool:
