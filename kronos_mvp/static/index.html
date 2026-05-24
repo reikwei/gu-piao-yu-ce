@@ -658,7 +658,7 @@
 
       setDetailBusy(true, `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的概率分析...`);
       try {
-        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=true`));
+        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`));
         const analysis = data.analysis || deriveAnalysis(data, DEFAULT_HORIZON);
         const envelope = buildForecastEnvelope(data, analysis);
         renderDetail(data, analysis, envelope);
