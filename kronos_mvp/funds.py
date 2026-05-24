@@ -288,7 +288,7 @@ class AkShareFundFactorProvider:
             ratio_frame = ak.stock_main_fund_flow(symbol="全部股票")
             if ratio_frame is not None and not ratio_frame.empty:
                 for _, row in ratio_frame.iterrows():
-                    symbol = normalize_symbol(str(row.get("代码", "")))
+                    symbol = _normalize_provider_symbol(row.get("代码", ""))
                     if not _is_supported_a_share_symbol(symbol):
                         continue
                     flow_map[symbol] = {
@@ -303,7 +303,7 @@ class AkShareFundFactorProvider:
             if amount_frame is None or amount_frame.empty:
                 raise ProviderError("returned no rows")
             for _, row in amount_frame.iterrows():
-                symbol = normalize_symbol(str(row.get("股票代码", "")))
+                symbol = _normalize_provider_symbol(row.get("股票代码", ""))
                 if not _is_supported_a_share_symbol(symbol):
                     continue
                 net_inflow = _parse_chinese_number(row.get("净额"))
@@ -350,7 +350,7 @@ class AkShareFundFactorProvider:
                 if frame is None or frame.empty:
                     continue
                 for _, row in frame.iterrows():
-                    symbol = normalize_symbol(str(row.get(symbol_column, "")))
+                    symbol = _normalize_provider_symbol(row.get(symbol_column, ""))
                     if not _is_supported_a_share_symbol(symbol):
                         continue
                     margin_map[symbol] = {
@@ -466,6 +466,23 @@ def _is_supported_a_share_symbol(symbol: str) -> bool:
     if len(code) != 6 or not code.isdigit():
         return False
     return code.startswith(("000", "001", "002", "003", "300", "301", "430", "600", "601", "603", "605", "688", "689", "8", "92"))
+
+
+def _normalize_provider_symbol(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "nan"}:
+        return ""
+
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+
+    normalized = normalize_symbol(text)
+    if normalized.isdigit() and len(normalized) < 6:
+        normalized = normalized.zfill(6)
+    return normalized
 
 
 def _parse_chinese_number(value: object) -> float | None:

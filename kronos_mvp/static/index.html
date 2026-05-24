@@ -90,6 +90,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-wrap: wrap;
     }
 
     .capture-button {
@@ -864,6 +865,11 @@
         flex-direction: column;
       }
 
+      .topbar-actions {
+        margin-left: 0;
+        width: 100%;
+      }
+
       #chart { min-height: 380px; }
     }
   </style>
@@ -887,6 +893,10 @@
       <div class='topbar-copy'>
         <h1 id='fund-title'>股票资金面分析</h1>
         <p id='fund-status'>展示最新交易日资金净额、融资趋势和综合结论。</p>
+      </div>
+      <div class='topbar-actions'>
+        <button class='detail-action-button' id='reload-fund-analysis' type='button'>重新加载资金面数据</button>
+        <button class='detail-action-button' id='back-home-from-fund' type='button'>返回首页</button>
       </div>
     </header>
 
@@ -1266,6 +1276,7 @@
     const predictButton = document.getElementById('predict-button');
     const fundAnalysisButton = document.getElementById('fund-analysis-button');
     const captureButton = document.getElementById('capture-detail');
+    const reloadFundButton = document.getElementById('reload-fund-analysis');
     const fundTitleEl = document.getElementById('fund-title');
     const fundStatusEl = document.getElementById('fund-status');
     const authStatusEl = document.getElementById('auth-status');
@@ -1294,7 +1305,12 @@
     document.getElementById('back-detail').addEventListener('click', () => {
       showView('detail');
     });
+    document.getElementById('back-home-from-fund').addEventListener('click', () => {
+      showView('home');
+      homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
+    });
     fundAnalysisButton.addEventListener('click', openFundAnalysisView);
+    reloadFundButton.addEventListener('click', () => loadFundAnalysis(false));
     captureButton.addEventListener('click', savePredictionScreenshot);
 
     document.getElementById('auth-password').addEventListener('keydown', event => {
@@ -1786,8 +1802,11 @@
       if (!currentPredictionData) {
         return;
       }
+      const reloadLabel = reloadFundButton.textContent;
       fundAnalysisButton.disabled = true;
       fundAnalysisButton.textContent = '加载中...';
+      reloadFundButton.disabled = true;
+      reloadFundButton.textContent = '重新加载中...';
       document.getElementById('fund-analysis-status').textContent = `正在加载 ${currentPredictionData.symbol} 的资金面分析...`;
       renderFundViewHeader(currentPredictionData.symbol, currentPredictionAnalysis);
       try {
@@ -1812,6 +1831,8 @@
       } finally {
         fundAnalysisButton.disabled = false;
         fundAnalysisButton.textContent = '资金面分析';
+        reloadFundButton.disabled = false;
+        reloadFundButton.textContent = reloadLabel;
       }
     }
 

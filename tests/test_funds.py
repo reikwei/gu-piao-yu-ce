@@ -8,6 +8,7 @@ from kronos_mvp.funds import (
     FundFactorStore,
     FundFactorSyncService,
     MemoryFundFactorProvider,
+    _normalize_provider_symbol,
     build_fund_analysis,
 )
 from kronos_mvp.providers import ProviderError
@@ -82,6 +83,12 @@ class FundFactorSyncServiceTests(unittest.TestCase):
 
 
 class FundAnalysisTests(unittest.TestCase):
+    def test_normalize_provider_symbol_restores_leading_zero_codes(self):
+        self.assertEqual(_normalize_provider_symbol(1), "000001")
+        self.assertEqual(_normalize_provider_symbol("333"), "000333")
+        self.assertEqual(_normalize_provider_symbol(1237.0), "001237")
+        self.assertEqual(_normalize_provider_symbol("600519"), "600519")
+
     def test_build_fund_analysis_returns_bullish_signal(self):
         analysis = build_fund_analysis(
             [
