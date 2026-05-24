@@ -117,6 +117,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("QQ / 微信 / 电话都可以，不填也行", response.text)
         self.assertIn("确认注册", response.text)
         self.assertIn("取消", response.text)
+        self.assertIn("id='register-status'", response.text)
+        self.assertIn("填写信息后点击确认注册。", response.text)
         self.assertIn("进入账户中心", response.text)
         self.assertIn("home-predict-overlay", response.text)
         self.assertIn("正在生成预测分析", response.text)
