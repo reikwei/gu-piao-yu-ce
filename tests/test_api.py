@@ -60,6 +60,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("请输入登录密码", response.text)
         self.assertIn("确认密码以后，才会进入正常首页。", response.text)
         self.assertIn("返回首页", response.text)
+        self.assertIn("点击保存预测截图", response.text)
         self.assertIn("未来 7 个交易日", response.text)
         self.assertNotIn("Kronos Probability Desk", response.text)
         self.assertNotIn('id="paths"', response.text)

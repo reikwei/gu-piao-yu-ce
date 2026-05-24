@@ -85,6 +85,39 @@
       font-size: 13px;
     }
 
+    .topbar-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .capture-button {
+      min-width: 188px;
+      height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(23, 50, 77, 0.12);
+      background: linear-gradient(135deg, rgba(23, 50, 77, 0.94), rgba(33, 71, 104, 0.94));
+      color: #f8fafc;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .capture-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(23, 50, 77, 0.16);
+    }
+
+    .capture-button:disabled {
+      opacity: 0.72;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+
     .view { min-height: calc(100vh - 120px); }
 
     .centered {
@@ -449,6 +482,9 @@
         <h1 id='detail-title'>股票概率预测</h1>
         <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
       </div>
+      <div class='topbar-actions'>
+        <button class='capture-button' id='capture-detail' type='button'>点击保存预测截图</button>
+      </div>
     </header>
 
     <main>
@@ -583,11 +619,13 @@
     const detailTopbar = document.getElementById('detail-topbar');
     const loginButton = document.getElementById('login-button');
     const predictButton = document.getElementById('predict-button');
+    const captureButton = document.getElementById('capture-detail');
     const authStatusEl = document.getElementById('auth-status');
     const homeStatusEl = document.getElementById('home-status');
     const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+    let html2CanvasLoader = null;
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
@@ -596,6 +634,7 @@
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
     });
+    captureButton.addEventListener('click', savePredictionScreenshot);
 
     document.getElementById('access-password').addEventListener('keydown', event => {
       if (event.key === 'Enter') {
@@ -694,6 +733,71 @@
       document.getElementById('analysis-summary').textContent = buildNarrative(data, analysis);
       renderScenarioList(envelope.scenarios, analysis.lastClose);
       renderChart(data, analysis, envelope);
+    }
+
+    async function savePredictionScreenshot() {
+      const detailView = views.detail;
+      if (detailView.hidden) {
+        return;
+      }
+
+      const originalText = captureButton.textContent;
+      captureButton.disabled = true;
+      captureButton.textContent = '正在生成截图...';
+
+      try {
+        const html2canvas = await loadHtml2Canvas();
+        const captureTarget = document.body;
+        const captureWidth = Math.max(document.documentElement.clientWidth, document.documentElement.scrollWidth, document.body.scrollWidth);
+        const captureHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, document.documentElement.clientHeight);
+        const canvas = await html2canvas(captureTarget, {
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: null,
+          width: captureWidth,
+          height: captureHeight,
+          windowWidth: captureWidth,
+          windowHeight: captureHeight,
+          scrollX: 0,
+          scrollY: -window.scrollY,
+          scale: Math.min(window.devicePixelRatio || 1.5, 2),
+        });
+
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = buildScreenshotFilename();
+        link.click();
+      } catch (error) {
+        detailStatusEl.textContent = error.message || '生成截图失败';
+      } finally {
+        captureButton.disabled = false;
+        captureButton.textContent = originalText;
+      }
+    }
+
+    function loadHtml2Canvas() {
+      if (window.html2canvas) {
+        return Promise.resolve(window.html2canvas);
+      }
+      if (html2CanvasLoader) {
+        return html2CanvasLoader;
+      }
+
+      html2CanvasLoader = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        script.onload = () => resolve(window.html2canvas);
+        script.onerror = () => reject(new Error('截图组件加载失败，请稍后重试。'));
+        document.head.appendChild(script);
+      });
+
+      return html2CanvasLoader;
+    }
+
+    function buildScreenshotFilename() {
+      const symbol = (document.getElementById('detail-title').textContent || '股票预测详情').replace(/\s+/g, '');
+      const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, '').replace('T', '-');
+      return `${symbol}-${timestamp}.png`;
     }
 
     function showView(name) {
