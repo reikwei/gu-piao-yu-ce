@@ -187,6 +187,30 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].close, 10.2)
 
+    def test_akshare_sina_incremental_fetch_returns_empty_list_when_no_new_rows(self):
+        def stock_zh_a_daily(symbol, adjust):
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22"],
+                    "open": [10.0],
+                    "high": [10.5],
+                    "low": [9.8],
+                    "close": [10.2],
+                    "volume": [1000],
+                    "amount": [10200],
+                }
+            )
+
+        def stock_zh_a_hist(*args, **kwargs):
+            raise AssertionError("should not fall back when sina fetch succeeds but has no new rows")
+
+        fake_ak = SimpleNamespace(stock_zh_a_daily=stock_zh_a_daily, stock_zh_a_hist=stock_zh_a_hist)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            rows = AkShareDailyProvider().fetch_daily("920001", start_date=date(2026, 5, 23))
+
+        self.assertEqual(rows, [])
+
     def test_akshare_bj_daily_fetch_falls_back_to_unadjusted_history_when_sina_fails(self):
         calls = []
 

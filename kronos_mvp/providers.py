@@ -294,6 +294,8 @@ def _fetch_akshare_sina_daily(ak: object, symbol: str, start_date: date | None, 
     if start_date is not None:
         frame = frame[frame["date"] >= start_date]
     if frame.empty:
+        if start_date is not None:
+            return []
         raise ProviderError("returned no rows")
     return _build_candles_from_akshare_sina(frame)
 
