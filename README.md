@@ -151,11 +151,17 @@ python -m unittest discover -s tests -v
 
   VPS_HOST
   VPS_USER
+  VPS_PASSWORD
   VPS_SSH_KEY
   VPS_DATA_DIR
   TUSHARE_TOKEN
 
-如果配置了 VPS 相关 Secrets，工作流会把 data/candles.db 上传到 VPS 数据目录。
+如果配置了 VPS 相关 Secrets，工作流会把 data/candles.db 上传到 VPS 数据目录。认证方式支持两种：
+
+- 密码登录：填写 VPS_HOST、VPS_USER、VPS_PASSWORD、VPS_DATA_DIR。
+- 密钥登录：填写 VPS_HOST、VPS_USER、VPS_SSH_KEY、VPS_DATA_DIR。
+
+兼容旧配置：如果你以前误把 VPS 登录密码填进了 VPS_SSH_KEY，而不是私钥内容，当前 workflow 也会按密码处理；但后续还是建议把它迁到 VPS_PASSWORD，避免名字继续误导。
 
 ### Git 上传规则
 
@@ -167,7 +173,8 @@ python -m unittest discover -s tests -v
 
 - VPS_HOST：你的服务器地址。当前就是 172.245.147.13。
 - VPS_USER：SSH 用户。你现在填 root 就对。
-- VPS_SSH_KEY：用于登录 VPS 的私钥内容，放在 GitHub Secrets，不进仓库。
+- VPS_PASSWORD：如果服务器是 root + 密码登录，就把登录密码放这里，放在 GitHub Secrets，不进仓库。
+- VPS_SSH_KEY：如果服务器是密钥登录，才填写这里；内容是私钥原文，放在 GitHub Secrets，不进仓库。
 - VPS_DATA_DIR：Actions 上传 data/candles.db 的目标目录。这个值要和 VPS 上实际部署目录一致。
 
 如果你的项目在 VPS 上部署目录就是 /home/yupiaoyuce，并且应用读取的数据库路径是 data/candles.db，那么填 /home/yupiaoyuce 是对的。因为工作流上传的是 data/candles.db，最终会落成 /home/yupiaoyuce/data/candles.db。
