@@ -356,7 +356,7 @@ class AccountStore:
                     (QUERY_PRICE_CENTS, now, user_id, QUERY_PRICE_CENTS),
                 )
             else:
-                raise AccountError("免费次数和余额都不足，请先充值。", status_code=402)
+                raise AccountError("你的免费次数已用完，请到账户中心充值。", status_code=402)
 
             cursor = conn.execute(
                 """

@@ -243,11 +243,19 @@
       justify-content: center;
       min-height: 36px;
       margin-top: 18px;
-      padding: 0 14px;
+      padding: 8px 14px;
       border-radius: 999px;
       background: rgba(23, 50, 77, 0.06);
       color: var(--navy);
       font-size: 13px;
+      line-height: 1.6;
+      text-align: center;
+      white-space: pre-line;
+    }
+
+    .entry-note.is-warning {
+      background: rgba(198, 123, 27, 0.14);
+      box-shadow: inset 0 0 0 1px rgba(198, 123, 27, 0.18);
     }
 
     .modal-backdrop {
@@ -1477,6 +1485,7 @@
     const reloadFundButton = document.getElementById('reload-fund-analysis');
     const fundTitleEl = document.getElementById('fund-title');
     const fundStatusEl = document.getElementById('fund-status');
+    const accountNoteEl = document.getElementById('account-note');
     const authStatusEl = document.getElementById('auth-status');
     const registerStatusEl = document.getElementById('register-status');
     const homeStatusEl = document.getElementById('home-status');
@@ -1729,7 +1738,7 @@
       if (!currentUser) {
         return;
       }
-      document.getElementById('account-note').textContent = formatHomeAccountNote(currentUser);
+      renderHomeAccountNote(currentUser);
       document.getElementById('free-credits-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.freeCreditsRemaining} 次`;
       document.getElementById('balance-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.balanceYuan} 元`;
       document.getElementById('annual-value').textContent = currentUser.isAdmin ? '管理员' : formatAnnualState(currentUser);
@@ -1740,9 +1749,31 @@
       document.getElementById('account-admin-button').hidden = !currentUser.isAdmin;
     }
 
+    function renderHomeAccountNote(user) {
+      const quotaExhausted = isPredictionQuotaExhausted(user);
+      accountNoteEl.textContent = quotaExhausted
+        ? '⚠️ 你的免费次数已用完\n请到账户中心充值。'
+        : formatHomeAccountNote(user);
+      accountNoteEl.classList.toggle('is-warning', quotaExhausted);
+    }
+
     function formatHomeAccountNote(user) {
       const remainingQuota = getRemainingQueryQuotaText(user);
       return `${user.username}，你还剩余 ${remainingQuota}查询机会。包年不限制查询。详情查阅 账户中心。`;
+    }
+
+    function isPredictionQuotaExhausted(user) {
+      return !hasAvailablePredictionQuota(user);
+    }
+
+    function hasAvailablePredictionQuota(user) {
+      if (!user) {
+        return false;
+      }
+      if (user.isAdmin || user.annualActive) {
+        return true;
+      }
+      return Number(user.freeCreditsRemaining || 0) > 0 || Number(user.balanceCents || 0) >= QUERY_PRICE_CENTS;
     }
 
     function getRemainingQueryQuotaText(user) {
@@ -1958,8 +1989,20 @@
           hideHomePredictOverlay();
           authStatusEl.textContent = '请先登录账户。';
           showView('auth');
-        } else {
+        } else if (isPredictionQuotaError(error)) {
+          resetPredictFailureState();
+          const failureState = buildNoQuotaOverlayState();
+          homeStatusEl.textContent = failureState.status;
+          showHomePredictOverlay(failureState);
+          showView('home');
+        } else if (error && error.isTimeout) {
           const failureState = buildPredictFailureOverlayState();
+          homeStatusEl.textContent = failureState.status;
+          showHomePredictOverlay(failureState);
+          showView('home');
+        } else {
+          resetPredictFailureState();
+          const failureState = buildPredictErrorOverlayState(error);
           homeStatusEl.textContent = failureState.status;
           showHomePredictOverlay(failureState);
           showView('home');
@@ -2404,10 +2447,15 @@
         if (response.status === 401) {
           const error = new Error(payload.detail || '请先登录。');
           error.authRequired = true;
+          error.statusCode = response.status;
+          error.detail = payload.detail || '';
           throw error;
         }
         if (!response.ok) {
-          throw new Error(payload.detail || '请求失败');
+          const error = new Error(payload.detail || '请求失败');
+          error.statusCode = response.status;
+          error.detail = payload.detail || '';
+          throw error;
         }
         return payload;
       } catch (error) {
@@ -2926,6 +2974,17 @@
       };
     }
 
+    function buildNoQuotaOverlayState() {
+      return {
+        tone: 'error',
+        emoji: '⚠️',
+        title: '免费次数已用完',
+        body: '你的免费次数已用完，请到账户中心充值。',
+        hint: '进入账户中心后，可选择小额充值或充值包年。',
+        status: '你的免费次数已用完，请到账户中心充值。',
+      };
+    }
+
     function buildPredictFailureOverlayState() {
       const failureCount = recordPredictFailure();
       if (failureCount >= 2) {
@@ -2946,6 +3005,37 @@
         hint: '',
         status: '预测超时……请刷新页面重试。',
       };
+    }
+
+    function buildPredictErrorOverlayState(error) {
+      const message = normalizePredictErrorMessage(error);
+      return {
+        tone: 'error',
+        emoji: '⚠️',
+        title: '暂时无法完成预测',
+        body: message,
+        hint: '',
+        status: message,
+      };
+    }
+
+    function normalizePredictErrorMessage(error) {
+      const message = String((error && error.message) || '').trim();
+      if (!message || message === 'Failed to fetch') {
+        return '预测请求失败，请稍后重试。';
+      }
+      return message;
+    }
+
+    function isPredictionQuotaError(error) {
+      if (!error) {
+        return false;
+      }
+      if (error.statusCode === 402) {
+        return true;
+      }
+      const message = String(error.message || '');
+      return message.includes('免费次数和余额都不足') || message.includes('免费次数已用完');
     }
 
     function getPredictFailureCount() {

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kronos_mvp.accounts import AccountStore, annual_is_active, yuan_to_cents
+from kronos_mvp.accounts import AccountError, AccountStore, annual_is_active, yuan_to_cents
 from kronos_mvp.payments import sign_params
 
 
@@ -32,6 +32,21 @@ class AccountStoreTests(unittest.TestCase):
 
         self.assertEqual(updated["balance_cents"], 0)
         self.assertTrue(annual_is_active(updated["annual_until"]))
+
+    def test_authorize_prediction_requires_recharge_after_free_credits_are_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AccountStore(Path(tmp) / "app.db")
+            user = store.create_user("alice", "secret123")
+
+            for _ in range(int(user["free_credits_remaining"])):
+                usage = store.authorize_prediction(user["id"], "600519")
+                store.mark_prediction_succeeded(int(usage["id"]))
+
+            with self.assertRaises(AccountError) as context:
+                store.authorize_prediction(user["id"], "600519")
+
+        self.assertEqual(context.exception.status_code, 402)
+        self.assertEqual(context.exception.detail, "你的免费次数已用完，请到账户中心充值。")
 
 
 class SailaPayTests(unittest.TestCase):
