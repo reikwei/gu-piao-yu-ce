@@ -720,6 +720,17 @@
       margin-top: 14px;
     }
 
+    .fund-helper-note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(198, 123, 27, 0.18);
+      background: rgba(255, 247, 236, 0.9);
+      color: var(--navy);
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1204,7 +1215,16 @@
                 <span>融资买入额</span>
                 <strong id='fund-margin-buy-value'>--</strong>
               </div>
+              <div class='meta-item'>
+                <span>数据更新时间</span>
+                <strong id='fund-updated-at-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>样本交易日数</span>
+                <strong id='fund-history-days-value'>--</strong>
+              </div>
             </div>
+            <div class='fund-helper-note' id='fund-margin-note' hidden></div>
             <div class='scenario-list component-copy' id='fund-component-list'>
               <div class='scenario-row neutral'>
                 <header>
@@ -1844,6 +1864,9 @@
       document.getElementById('fund-net-ratio-value').textContent = '--';
       document.getElementById('fund-margin-balance-value').textContent = '--';
       document.getElementById('fund-margin-buy-value').textContent = '--';
+      document.getElementById('fund-updated-at-value').textContent = '--';
+      document.getElementById('fund-history-days-value').textContent = '--';
+      setFundMarginNote('');
       document.getElementById('fund-analysis-status').textContent = '等待加载资金面数据。';
       document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>进入资金面分析页后，会在这里展示四项因子的评分和解释。</p></div>`;
     }
@@ -1857,6 +1880,9 @@
       document.getElementById('fund-net-ratio-value').textContent = formatSignedPercentFromNumber(latest.fundNetInflowRatio);
       document.getElementById('fund-margin-balance-value').textContent = formatMoney(latest.marginBalance);
       document.getElementById('fund-margin-buy-value').textContent = formatMoney(latest.marginBuyAmount);
+      document.getElementById('fund-updated-at-value').textContent = formatDateTime(latest.updatedAt);
+      document.getElementById('fund-history-days-value').textContent = `${analysis.historyDays || 1} 个交易日`;
+      setFundMarginNote(buildFundMarginNote(latest));
       document.getElementById('fund-analysis-status').textContent = `截至 ${analysis.tradeDate || '--'}，已累计 ${analysis.historyDays || 1} 个交易日的资金面样本。`;
       document.getElementById('fund-component-list').innerHTML = (analysis.components || []).map(component => {
         const scoreText = `${component.score || 0}/25`;
@@ -1875,6 +1901,9 @@
       document.getElementById('fund-net-ratio-value').textContent = '--';
       document.getElementById('fund-margin-balance-value').textContent = '--';
       document.getElementById('fund-margin-buy-value').textContent = '--';
+      document.getElementById('fund-updated-at-value').textContent = '--';
+      document.getElementById('fund-history-days-value').textContent = '--';
+      setFundMarginNote('');
       document.getElementById('fund-analysis-status').textContent = message;
       document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>未取得资金面数据</span><span class='scenario-value'>--</span></header><p>${escapeHtml(message)}</p></div>`;
     }
@@ -1884,6 +1913,24 @@
       badge.classList.remove('bullish', 'bearish', 'neutral');
       badge.classList.add(signal || 'neutral');
       badge.textContent = text;
+    }
+
+    function setFundMarginNote(message) {
+      const note = document.getElementById('fund-margin-note');
+      note.hidden = !message;
+      note.textContent = message || '';
+    }
+
+    function buildFundMarginNote(latest) {
+      const marginBalanceMissing = latest.marginBalance == null;
+      const marginBuyMissing = latest.marginBuyAmount == null;
+      if (!marginBalanceMissing && !marginBuyMissing) {
+        return '';
+      }
+      if (marginBalanceMissing && marginBuyMissing) {
+        return '当前没有拿到这只股票当日的融资余额和融资买入额。通常表示它不是融资融券标的，或数据源当天没有覆盖到融资明细；这不会影响资金净额、资金占比和综合结论的展示。';
+      }
+      return '当前只拿到部分融资字段。一般是数据源当天融资明细覆盖不完整，不影响其余资金面指标和综合结论。';
     }
 
     function renderFundViewHeader(symbol, kronosAnalysis, fundAnalysis = null, errorMessage = '') {
@@ -2375,6 +2422,24 @@
       }
       const ratio = Number(value) / 100;
       return formatSignedPercent(ratio);
+    }
+
+    function formatDateTime(value) {
+      if (!value) {
+        return '--';
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return String(value).replace('T', ' ');
+      }
+      return new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(date).replace('/', '-').replace('/', '-');
     }
 
     function buildChartTooltip(params, envelope, historyCount) {

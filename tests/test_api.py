@@ -125,6 +125,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("综合结论", response.text)
         self.assertIn("返回预测详情", response.text)
         self.assertIn("重新加载资金面数据", response.text)
+        self.assertIn("数据更新时间", response.text)
+        self.assertIn("样本交易日数", response.text)
         self.assertIn("id='fund-view'", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)
