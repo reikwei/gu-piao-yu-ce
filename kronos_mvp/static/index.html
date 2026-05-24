@@ -464,6 +464,16 @@
       max-width: 640px;
     }
 
+    .password-change-form {
+      display: grid;
+      gap: 12px;
+      max-width: 520px;
+    }
+
+    .password-change-form .secondary-button {
+      width: 100%;
+    }
+
     .account-status {
       margin: 0 24px 24px;
       padding-top: 16px;
@@ -928,12 +938,11 @@
               <section class='account-pane' id='account-pane-password'>
                 <h2>修改密码</h2>
                 <p>输入当前密码和新密码，新密码至少 6 位。</p>
-                <div class='account-form'>
-                  <div class='payment-row'>
-                    <input id='current-password' type='password' autocomplete='current-password' placeholder='当前密码'>
-                    <input id='new-password' type='password' autocomplete='new-password' placeholder='新密码，至少 6 位'>
-                    <button class='secondary-button' id='change-password-button' type='button'>修改密码</button>
-                  </div>
+                <div class='password-change-form'>
+                  <input id='current-password' type='password' autocomplete='current-password' placeholder='输入原始密码'>
+                  <input id='new-password' type='password' autocomplete='new-password' placeholder='输入新密码'>
+                  <input id='confirm-new-password' type='password' autocomplete='new-password' placeholder='确认新密码'>
+                  <button class='secondary-button' id='change-password-button' type='button'>修改密码</button>
                 </div>
               </section>
               <section class='account-pane' id='account-pane-logout'>
@@ -1395,8 +1404,13 @@
     async function changePassword() {
       const currentPassword = document.getElementById('current-password').value;
       const newPassword = document.getElementById('new-password').value;
-      if (!currentPassword || !newPassword) {
-        accountStatusEl.textContent = '请填写当前密码和新密码。';
+      const confirmNewPassword = document.getElementById('confirm-new-password').value;
+      if (!currentPassword || !newPassword || !confirmNewPassword) {
+        accountStatusEl.textContent = '请填写原始密码、新密码和确认新密码。';
+        return;
+      }
+      if (newPassword !== confirmNewPassword) {
+        accountStatusEl.textContent = '两次输入的新密码不一致。';
         return;
       }
       accountStatusEl.textContent = '正在修改密码...';
@@ -1410,6 +1424,7 @@
         renderAccountState();
         document.getElementById('current-password').value = '';
         document.getElementById('new-password').value = '';
+        document.getElementById('confirm-new-password').value = '';
         accountStatusEl.textContent = '密码已修改，下次登录请使用新密码。';
       } catch (error) {
         accountStatusEl.textContent = error.message || '修改密码失败';

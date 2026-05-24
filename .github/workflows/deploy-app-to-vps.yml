@@ -120,11 +120,15 @@ jobs:
                   continue
                 key, value = line.split("=", 1)
                 existing[key] = value
+            public_base_url = os.environ.get("APP_PUBLIC_BASE_URL", "").strip() or "https://jdn.cc.cd"
+            if public_base_url.rstrip("/") == "https://tghao.cc.cd":
+              public_base_url = "https://jdn.cc.cd"
             updates = {
               "SAILA_URL": os.environ.get("SAILA_URL", ""),
               "SAILA_ID": os.environ.get("SAILA_ID", ""),
               "SAILA_KEY": os.environ.get("SAILA_KEY", ""),
-              "APP_PUBLIC_BASE_URL": os.environ.get("APP_PUBLIC_BASE_URL", "") or "https://tghao.cc.cd",
+              "APP_PUBLIC_BASE_URL": public_base_url,
+              "APP_ALLOW_ORIGINS": public_base_url,
               "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
               "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
             }
@@ -184,11 +188,15 @@ jobs:
                   continue
                 key, value = line.split("=", 1)
                 existing[key] = value
+            public_base_url = os.environ.get("APP_PUBLIC_BASE_URL", "").strip() or "https://jdn.cc.cd"
+            if public_base_url.rstrip("/") == "https://tghao.cc.cd":
+              public_base_url = "https://jdn.cc.cd"
             updates = {
               "SAILA_URL": os.environ.get("SAILA_URL", ""),
               "SAILA_ID": os.environ.get("SAILA_ID", ""),
               "SAILA_KEY": os.environ.get("SAILA_KEY", ""),
-              "APP_PUBLIC_BASE_URL": os.environ.get("APP_PUBLIC_BASE_URL", "") or "https://tghao.cc.cd",
+              "APP_PUBLIC_BASE_URL": public_base_url,
+              "APP_ALLOW_ORIGINS": public_base_url,
               "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
               "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
             }
