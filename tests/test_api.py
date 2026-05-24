@@ -57,8 +57,9 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("./config.js", response.text)
         self.assertIn("土豆A股预测研究", response.text)
-        self.assertIn("量化AI预测个股未来走势，通过100万k线数据预测。", response.text)
-        self.assertIn("预测路径：默认3条", response.text)
+        self.assertIn("上涨概率", response.text)
+        self.assertIn("波动放大概率", response.text)
+        self.assertIn("内部采样：默认 12 条路径", response.text)
         self.assertNotIn('id="paths"', response.text)
 
     def test_config_js_uses_environment_values(self):
@@ -137,6 +138,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["sync"]["warning"], "offline")
         predictor.predict.assert_called_once()
+
+    def test_predict_response_includes_probability_analysis(self):
+        store = FakeStore()
+        predictor = Mock()
+        predictor.predict.return_value = _sample_prediction_result()
+
+        with patch("kronos_mvp.api.CandleStore", return_value=store), patch(
+            "kronos_mvp.api.KronosPredictor", return_value=predictor
+        ):
+            client = TestClient(create_app())
+            response = client.get("/api/predict/600519?horizon=1&paths=3&auto_sync=false")
+
+        self.assertEqual(response.status_code, 200)
+        analysis = response.json()["analysis"]
+        self.assertEqual(analysis["horizon"], 1)
+        self.assertEqual(analysis["signal"], "bullish")
+        self.assertEqual(analysis["signalLabel"], "看涨")
+        self.assertEqual(analysis["pathCount"], 1)
+        self.assertEqual(analysis["upsideProbability"], 1.0)
+        self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
 
 
 if __name__ == "__main__":

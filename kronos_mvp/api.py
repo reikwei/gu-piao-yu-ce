@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
         return {
             **result.to_dict(),
             "history": [candle.to_dict() for candle in candles[-120:]],
+            "analysis": _build_prediction_analysis(candles, result, horizon),
             "lookback": len(candles),
             "sync": sync_info,
         }
@@ -98,6 +99,73 @@ def _build_predictor() -> KronosPredictor:
     )
 
 
+def _build_prediction_analysis(candles: list, result, horizon: int) -> dict[str, object]:
+    last_candle = candles[-1]
+    last_close = float(last_candle.close)
+
+    end_closes: list[float] = []
+    projected_volatilities: list[float] = []
+    for path in result.paths:
+        closes = [float(point.close) for point in path.points]
+        if not closes:
+            continue
+        end_closes.append(closes[-1])
+        projected_volatilities.append(_mean_abs_return([last_close, *closes]))
+
+    if not end_closes:
+        return {
+            "horizon": int(horizon),
+            "lastDate": last_candle.date.isoformat(),
+            "lastClose": last_close,
+            "pathCount": 0,
+            "signal": "neutral",
+            "signalLabel": "震荡",
+            "confidence": 0.0,
+            "upsideProbability": 0.0,
+            "downsideProbability": 0.0,
+            "flatProbability": 1.0,
+            "volatilityAmplificationProbability": 0.0,
+            "meanProjectedClose": last_close,
+            "meanProjectedReturn": 0.0,
+            "projectedCloseLow": last_close,
+            "projectedCloseHigh": last_close,
+        }
+
+    path_count = len(end_closes)
+    upside_probability = sum(close > last_close for close in end_closes) / path_count
+    downside_probability = sum(close < last_close for close in end_closes) / path_count
+    flat_probability = max(0.0, 1.0 - upside_probability - downside_probability)
+    mean_projected_close = sum(end_closes) / path_count
+    mean_projected_return = ((mean_projected_close - last_close) / last_close) if last_close > 0 else 0.0
+
+    recent_history = candles[-min(len(candles), 21) :]
+    historical_volatility = _mean_abs_return([float(candle.close) for candle in recent_history])
+    volatility_amplification_probability = (
+        sum(volatility > historical_volatility for volatility in projected_volatilities) / len(projected_volatilities)
+        if projected_volatilities
+        else 0.0
+    )
+
+    signal, signal_label = _signal_from_probability(upside_probability)
+    return {
+        "horizon": int(horizon),
+        "lastDate": last_candle.date.isoformat(),
+        "lastClose": last_close,
+        "pathCount": path_count,
+        "signal": signal,
+        "signalLabel": signal_label,
+        "confidence": min(1.0, abs(upside_probability - 0.5) * 2.0),
+        "upsideProbability": upside_probability,
+        "downsideProbability": downside_probability,
+        "flatProbability": flat_probability,
+        "volatilityAmplificationProbability": volatility_amplification_probability,
+        "meanProjectedClose": mean_projected_close,
+        "meanProjectedReturn": mean_projected_return,
+        "projectedCloseLow": min(end_closes),
+        "projectedCloseHigh": max(end_closes),
+    }
+
+
 def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
     service = DataSyncService(store=store, providers=build_default_providers())
     try:
@@ -114,6 +182,22 @@ def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
             "updated": False,
             "warning": str(exc),
         }
+
+
+def _mean_abs_return(values: list[float]) -> float:
+    returns: list[float] = []
+    for prev, current in zip(values, values[1:]):
+        if prev > 0:
+            returns.append(abs((current - prev) / prev))
+    return sum(returns) / len(returns) if returns else 0.0
+
+
+def _signal_from_probability(upside_probability: float) -> tuple[str, str]:
+    if upside_probability >= 0.62:
+        return "bullish", "看涨"
+    if upside_probability <= 0.38:
+        return "bearish", "看跌"
+    return "neutral", "震荡"
 
 
 def _configure_cors(app: FastAPI) -> None:
