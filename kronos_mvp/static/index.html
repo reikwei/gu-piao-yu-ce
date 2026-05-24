@@ -482,7 +482,7 @@
         <h1 id='detail-title'>股票概率预测</h1>
         <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
       </div>
-      <div class='topbar-actions'>
+      <div class='topbar-actions' data-screenshot-exclude='true'>
         <button class='capture-button' id='capture-detail' type='button'>点击保存预测截图</button>
       </div>
     </header>
@@ -625,6 +625,7 @@
     const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+    const SCREENSHOT_WATERMARK_TEXT = 'wx：7354280';
     let html2CanvasLoader = null;
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
@@ -761,7 +762,9 @@
           scrollX: 0,
           scrollY: -window.scrollY,
           scale: Math.min(window.devicePixelRatio || 1.5, 2),
+          onclone: clonedDocument => prepareScreenshotClone(clonedDocument),
         });
+        applyScreenshotWatermark(canvas, SCREENSHOT_WATERMARK_TEXT);
 
         const link = document.createElement('a');
         link.href = canvas.toDataURL('image/png');
@@ -798,6 +801,42 @@
       const symbol = (document.getElementById('detail-title').textContent || '股票预测详情').replace(/\s+/g, '');
       const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, '').replace('T', '-');
       return `${symbol}-${timestamp}.png`;
+    }
+
+    function prepareScreenshotClone(clonedDocument) {
+      clonedDocument.querySelectorAll('[data-screenshot-exclude="true"]').forEach(node => {
+        node.remove();
+      });
+    }
+
+    function applyScreenshotWatermark(canvas, text) {
+      const context = canvas.getContext('2d');
+      if (!context || !text) {
+        return;
+      }
+
+      const fontSize = Math.max(28, Math.round(canvas.width / 34));
+      const rotation = -Math.PI / 6;
+      const stepX = fontSize * 6.2;
+      const stepY = fontSize * 3.4;
+
+      context.save();
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(rotation);
+      context.font = `700 ${fontSize}px "Noto Sans SC", sans-serif`;
+      context.fillStyle = 'rgba(23, 50, 77, 0.12)';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+
+      for (let y = -canvas.height; y <= canvas.height; y += stepY) {
+        const rowIndex = Math.round((y + canvas.height) / stepY);
+        const offsetX = rowIndex % 2 === 0 ? 0 : stepX / 2;
+        for (let x = -canvas.width; x <= canvas.width; x += stepX) {
+          context.fillText(text, x + offsetX, y);
+        }
+      }
+
+      context.restore();
     }
 
     function showView(name) {
