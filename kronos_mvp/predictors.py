@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import random
 from datetime import date, timedelta
 from functools import lru_cache
+from threading import Lock
 from typing import Any
 
 from .models import Candle, ForecastPath, PredictionPoint, PredictionResult
 from .storage import normalize_symbol
+
+
+_PREDICTION_SAMPLING_LOCK = Lock()
 
 
 class KronosPredictor:
@@ -30,6 +36,7 @@ class KronosPredictor:
             raise ValueError("at least two candles are required")
         horizon = _clamp(horizon, 1, 60)
         paths = _clamp(paths, 1, 20)
+        normalized_symbol = normalize_symbol(symbol)
 
         import pandas as pd
 
@@ -48,21 +55,25 @@ class KronosPredictor:
         future_days = next_trading_days(history[-1].date, horizon)
         y_timestamp = pd.Series([pd.Timestamp(day) for day in future_days])
         upstream = self._get_upstream_predictor()
+        base_seed = _prediction_seed(normalized_symbol, history, horizon)
 
         forecast_paths: list[ForecastPath] = []
-        for path_index in range(paths):
-            pred_df = upstream.predict(
-                df=df,
-                x_timestamp=x_timestamp,
-                y_timestamp=y_timestamp,
-                pred_len=horizon,
-                T=1.0,
-                top_p=0.9,
-                sample_count=1,
-            )
-            forecast_paths.append(ForecastPath(name=f"kronos_path_{path_index + 1}", points=_frame_to_points(pred_df, future_days)))
+        # Kronos 上游是采样式生成；这里按输入数据固定 seed，避免同一输入反复点击得到漂移结果。
+        with _PREDICTION_SAMPLING_LOCK:
+            for path_index in range(paths):
+                _seed_prediction_runtime(base_seed + path_index)
+                pred_df = upstream.predict(
+                    df=df,
+                    x_timestamp=x_timestamp,
+                    y_timestamp=y_timestamp,
+                    pred_len=horizon,
+                    T=1.0,
+                    top_p=0.9,
+                    sample_count=1,
+                )
+                forecast_paths.append(ForecastPath(name=f"kronos_path_{path_index + 1}", points=_frame_to_points(pred_df, future_days)))
 
-        return PredictionResult(symbol=normalize_symbol(symbol), backend=self.backend, paths=forecast_paths)
+        return PredictionResult(symbol=normalized_symbol, backend=self.backend, paths=forecast_paths)
 
     def _get_upstream_predictor(self) -> Any:
         if self._upstream_predictor is not None:
@@ -128,6 +139,42 @@ def _returns(candles: list[Candle]) -> list[float]:
 
 def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, int(value)))
+
+
+def _prediction_seed(symbol: str, candles: list[Candle], horizon: int) -> int:
+    payload = "|".join(
+        [
+            symbol,
+            str(horizon),
+            str(len(candles)),
+            *[
+                f"{candle.date.isoformat()}:{candle.open}:{candle.high}:{candle.low}:{candle.close}:{candle.volume}:{candle.amount}"
+                for candle in candles
+            ],
+        ]
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % (2**31)
+
+
+def _seed_prediction_runtime(seed: int) -> None:
+    random.seed(seed)
+
+    try:
+        import numpy as np
+
+        np.random.seed(seed % (2**32 - 1))
+    except ImportError:
+        pass
+
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
 
 
 def _frame_to_points(frame: Any, dates: list[date]) -> list[PredictionPoint]:
