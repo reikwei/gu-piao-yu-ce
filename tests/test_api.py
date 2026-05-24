@@ -142,6 +142,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("重新加载资金面数据", response.text)
         self.assertIn("数据更新时间", response.text)
         self.assertIn("样本交易日数", response.text)
+        self.assertIn("土豆A股预测研究院", response.text)
+        self.assertIn("https://jdn.cc.cd", response.text)
         self.assertIn("3日累计主力净流入", response.text)
         self.assertIn("5日累计主力净流入", response.text)
         self.assertIn("10日累计主力净流入", response.text)

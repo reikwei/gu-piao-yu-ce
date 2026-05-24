@@ -93,6 +93,63 @@
       flex-wrap: wrap;
     }
 
+    #detail-topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 18px;
+      align-items: center;
+    }
+
+    .detail-topbar-primary {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .detail-topbar-primary .topbar-copy {
+      min-width: 0;
+    }
+
+    .detail-topbar-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 280px;
+      padding: 10px 20px;
+      border: 1px solid rgba(24, 34, 49, 0.08);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 244, 230, 0.9));
+      box-shadow: 0 16px 32px rgba(17, 24, 39, 0.07);
+      text-align: center;
+    }
+
+    .detail-topbar-brand-title {
+      color: var(--ink);
+      font: 700 18px 'Space Grotesk', 'Noto Sans SC', sans-serif;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+    }
+
+    .detail-topbar-brand-link {
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.2;
+      text-decoration: none;
+    }
+
+    .detail-topbar-brand-link:hover {
+      text-decoration: underline;
+    }
+
+    #detail-topbar .topbar-actions {
+      margin-left: 0;
+      justify-self: end;
+    }
+
     .capture-button {
       min-width: 188px;
       height: 42px;
@@ -876,6 +933,20 @@
         flex-direction: column;
       }
 
+      #detail-topbar {
+        display: flex;
+      }
+
+      .detail-topbar-primary {
+        width: 100%;
+        flex-wrap: wrap;
+      }
+
+      .detail-topbar-brand {
+        width: 100%;
+        min-width: 0;
+      }
+
       .topbar-actions {
         margin-left: 0;
         width: 100%;
@@ -888,10 +959,16 @@
 <body>
   <div class='page-shell'>
     <header class='topbar' id='detail-topbar' hidden>
-      <button class='back-button' id='back-home' type='button'>返回首页</button>
-      <div class='topbar-copy'>
-        <h1 id='detail-title'>股票概率预测</h1>
-        <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
+      <div class='detail-topbar-primary'>
+        <button class='back-button' id='back-home' type='button'>返回首页</button>
+        <div class='topbar-copy'>
+          <h1 id='detail-title'>股票概率预测</h1>
+          <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
+        </div>
+      </div>
+      <div class='detail-topbar-brand'>
+        <div class='detail-topbar-brand-title'>土豆A股预测研究院</div>
+        <a class='detail-topbar-brand-link' href='https://jdn.cc.cd' rel='noopener noreferrer' target='_blank'>https://jdn.cc.cd</a>
       </div>
       <div class='topbar-actions' data-screenshot-exclude='true'>
         <button class='detail-action-button' id='fund-analysis-button' type='button'>资金面分析</button>
