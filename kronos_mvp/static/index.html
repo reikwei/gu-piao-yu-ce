@@ -1087,6 +1087,7 @@
     const runtimeConfig = window.KRONOS_CONFIG || {};
     const DEFAULT_HORIZON = 7;
     const DEFAULT_PATHS = 12;
+    const QUERY_PRICE_CENTS = 20;
     const chart = echarts.init(document.getElementById('chart'));
     const views = {
       auth: document.getElementById('auth-view'),
@@ -1334,7 +1335,7 @@
       if (!currentUser) {
         return;
       }
-      document.getElementById('account-note').textContent = `${currentUser.username}，每次普通查询扣 0.20 元，包年账号不扣0.2费用。`;
+      document.getElementById('account-note').textContent = formatHomeAccountNote(currentUser);
       document.getElementById('free-credits-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.freeCreditsRemaining} 次`;
       document.getElementById('balance-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.balanceYuan} 元`;
       document.getElementById('annual-value').textContent = currentUser.isAdmin ? '管理员' : formatAnnualState(currentUser);
@@ -1343,6 +1344,20 @@
         : `${currentUser.username}，余额 ${currentUser.balanceYuan} 元，免费次数 ${currentUser.freeCreditsRemaining} 次，包年状态：${formatAnnualState(currentUser)}。`;
       document.getElementById('admin-button').hidden = !currentUser.isAdmin;
       document.getElementById('account-admin-button').hidden = !currentUser.isAdmin;
+    }
+
+    function formatHomeAccountNote(user) {
+      const remainingQuota = getRemainingQueryQuotaText(user);
+      return `${user.username}，你还剩余${remainingQuota}查询机会。包年不限制查询。详情查阅 账户中心。`;
+    }
+
+    function getRemainingQueryQuotaText(user) {
+      if (user.isAdmin || user.annualActive) {
+        return '无限 次';
+      }
+      const freeCredits = Number(user.freeCreditsRemaining || 0);
+      const balanceCredits = Math.floor(Number(user.balanceCents || 0) / QUERY_PRICE_CENTS);
+      return `${Math.max(0, freeCredits + balanceCredits)}次`;
     }
 
     function formatAnnualState(user) {
