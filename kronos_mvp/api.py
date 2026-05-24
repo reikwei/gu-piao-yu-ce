@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import hmac
 import json
 import os
@@ -33,6 +34,7 @@ load_dotenv()
 
 ACCESS_COOKIE_NAME = "kronos_access"
 SESSION_COOKIE_NAME = "kronos_session"
+SUPPORTED_PAY_TYPES = {"alipay"}
 
 
 class LoginRequest(BaseModel):
@@ -220,10 +222,13 @@ def create_app() -> FastAPI:
         user = _require_current_user(request, account_store)
         if int(user["is_banned"]):
             raise HTTPException(status_code=403, detail="账号已被封禁，不能充值。")
+        pay_type = payload.payType or "alipay"
+        if pay_type not in SUPPORTED_PAY_TYPES:
+            raise HTTPException(status_code=400, detail="当前仅支持支付宝充值。")
         try:
             payment_client.require_configured()
             amount_cents = ANNUAL_PRICE_CENTS if payload.orderType == "annual" else yuan_to_cents(payload.amountYuan)
-            order = account_store.create_recharge_order(int(user["id"]), amount_cents, payload.orderType, payload.payType)
+            order = account_store.create_recharge_order(int(user["id"]), amount_cents, payload.orderType, pay_type)
             base_url = _public_base_url(request)
             pay_result = payment_client.create_payment(
                 out_trade_no=order["out_trade_no"],
@@ -232,7 +237,7 @@ def create_app() -> FastAPI:
                 notify_url=f"{base_url}/api/payments/notify",
                 return_url=f"{base_url}/api/payments/return",
                 client_ip=_client_ip(request),
-                pay_type=payload.payType,
+                pay_type=pay_type,
                 device=_request_device(request),
                 param=f"user:{user['id']}:type:{payload.orderType}",
             )
@@ -262,8 +267,9 @@ def create_app() -> FastAPI:
             return PlainTextResponse("fail", status_code=400)
 
     @app.get("/api/payments/return", response_class=HTMLResponse)
-    def payment_return() -> str:
-        return "<html><body><p>支付结果正在确认中，请返回预测页面查看余额或包年状态。</p></body></html>"
+    def payment_return(request: Request) -> str:
+        home_url = f"{_public_base_url(request)}/?payment=return"
+        return _payment_return_html(home_url)
 
     @app.post("/api/payments/convert-annual")
     def convert_annual(request: Request) -> dict[str, object]:
@@ -354,6 +360,65 @@ def _client_config() -> dict[str, str]:
         "apiBaseUrl": os.getenv("APP_API_BASE_URL", "").rstrip("/"),
         "siteTitle": os.getenv("APP_SITE_TITLE", "土豆A股预测研究"),
     }
+
+
+def _payment_return_html(home_url: str) -> str:
+        target = json.dumps(home_url, ensure_ascii=False)
+        escaped_home_url = html.escape(home_url, quote=True)
+        return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>支付结果确认中</title>
+    <meta http-equiv="refresh" content="2;url={escaped_home_url}">
+    <style>
+        body {{
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            color: #182231;
+            background: linear-gradient(180deg, #f8f4e6, #eef2ea);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }}
+        main {{
+            width: min(520px, calc(100vw - 32px));
+            padding: 30px;
+            border: 1px solid rgba(24, 34, 49, 0.1);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 24px 56px rgba(17, 24, 39, 0.08);
+            text-align: center;
+        }}
+        h1 {{ margin: 0; font-size: 26px; }}
+        p {{ margin: 14px 0 0; color: #667587; line-height: 1.8; }}
+        a {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 46px;
+            margin-top: 22px;
+            padding: 0 22px;
+            border-radius: 999px;
+            background: #17324d;
+            color: #fff;
+            font-weight: 700;
+            text-decoration: none;
+        }}
+    </style>
+</head>
+<body>
+    <main>
+        <h1>支付结果正在确认中</h1>
+        <p>正在自动返回登录后的首页，请稍后查看余额或包年状态。</p>
+        <a href="{escaped_home_url}">立即返回首页</a>
+    </main>
+    <script>
+        window.setTimeout(() => window.location.replace({target}), 1200);
+    </script>
+</body>
+</html>"""
 
 
 def _account_db_path(store: CandleStore) -> str:

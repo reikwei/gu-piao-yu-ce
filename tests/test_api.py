@@ -84,6 +84,12 @@ class ApiTests(unittest.TestCase):
         self.assertIn("欢迎进入用户后台", response.text)
         self.assertIn("小额充值", response.text)
         self.assertIn("充值余额", response.text)
+        self.assertIn("value='alipay'", response.text)
+        self.assertIn("支付宝", response.text)
+        self.assertNotIn("微信支付", response.text)
+        self.assertNotIn("USDT", response.text)
+        self.assertNotIn("wxpay", response.text)
+        self.assertNotIn("usdt", response.text)
         self.assertIn("充值包年", response.text)
         self.assertIn("余额转包年", response.text)
         self.assertIn("修改密码", response.text)
@@ -144,6 +150,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(user["balanceCents"], 0)
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["user"]["username"], "alice")
+
+    def test_payment_return_auto_redirects_to_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp, APP_PUBLIC_BASE_URL="https://stocks.example.com"), clear=False):
+                client = TestClient(create_app())
+
+                response = client.get("/api/payments/return")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("支付结果正在确认中", response.text)
+        self.assertIn("正在自动返回登录后的首页", response.text)
+        self.assertIn("window.location.replace", response.text)
+        self.assertIn("https://stocks.example.com/?payment=return", response.text)
+
+    def test_payment_order_rejects_unsupported_pay_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp), clear=False):
+                client = TestClient(create_app())
+                _register(client)
+
+                response = client.post(
+                    "/api/payments/orders",
+                    json={"amountYuan": "1", "orderType": "balance", "payType": "wxpay"},
+                )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "当前仅支持支付宝充值。")
 
     def test_user_can_change_password(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -438,7 +438,7 @@ class AccountStore:
     def create_recharge_order(self, user_id: int, amount_cents: int, order_type: str, pay_type: str | None) -> sqlite3.Row:
         if order_type not in {"balance", "annual"}:
             raise AccountError("无效订单类型。")
-        if pay_type and pay_type not in {"alipay", "wxpay", "usdt"}:
+        if pay_type and pay_type not in {"alipay"}:
             raise AccountError("无效支付方式。")
         if order_type == "annual" and amount_cents != ANNUAL_PRICE_CENTS:
             raise AccountError("包年套餐金额固定为 20 元。")
