@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from .funds import FundFactorStore, build_fund_analysis
+from .funds import DEFAULT_FUND_HISTORY_DAYS, FundFactorStore, build_fund_analysis
 from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers
@@ -76,6 +76,13 @@ class PasswordChangeRequest(BaseModel):
 
 class AdminPasswordResetRequest(BaseModel):
     newPassword: str
+
+
+def _fund_analysis_history_days() -> int:
+    try:
+        return max(1, int(os.getenv("FUND_ANALYSIS_LOOKBACK_DAYS", str(DEFAULT_FUND_HISTORY_DAYS))))
+    except ValueError:
+        return DEFAULT_FUND_HISTORY_DAYS
 
 
 def create_app() -> FastAPI:
@@ -223,7 +230,7 @@ def create_app() -> FastAPI:
     @app.get("/api/funds/{symbol}")
     def fund_analysis(symbol: str, request: Request) -> dict[str, object]:
         _require_current_user(request, account_store)
-        factors = fund_store.get_latest(symbol, limit=5)
+        factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
         if not factors:
             raise HTTPException(status_code=404, detail="该股票暂无资金面数据，请等待每日 18:09 同步后重试。")
         return {

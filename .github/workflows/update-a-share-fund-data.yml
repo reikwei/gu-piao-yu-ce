@@ -16,6 +16,7 @@ jobs:
     env:
       FUND_DB_PATH: data/fund_factors.db
       FUND_DATA_PROVIDERS: akshare
+      FUND_SYNC_HISTORY_DAYS: 15
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
@@ -41,10 +42,10 @@ jobs:
           restore-keys: |
             a-share-fund-${{ github.ref_name }}-
 
-      - name: Sync latest fund factors
+      - name: Sync recent fund factors incrementally
         run: |
           mkdir -p data
-          python -m kronos_mvp.cli --fund-db "${FUND_DB_PATH}" sync-funds
+          python -m kronos_mvp.cli --fund-db "${FUND_DB_PATH}" sync-funds --history-days "${FUND_SYNC_HISTORY_DAYS}"
 
       - name: Save fund cache
         if: always()

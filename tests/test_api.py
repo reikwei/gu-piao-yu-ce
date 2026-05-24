@@ -33,6 +33,21 @@ def _sample_prediction_result() -> PredictionResult:
     )
 
 
+def _sample_fund_factors() -> list[FundFactor]:
+    return [
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 12), fund_net_inflow=5.0e7, fund_net_inflow_ratio=1.2, margin_balance=8.10e9, margin_buy_amount=2.4e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 13), fund_net_inflow=4.5e7, fund_net_inflow_ratio=1.1, margin_balance=8.18e9, margin_buy_amount=2.5e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 14), fund_net_inflow=6.2e7, fund_net_inflow_ratio=1.8, margin_balance=8.25e9, margin_buy_amount=2.7e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 15), fund_net_inflow=7.0e7, fund_net_inflow_ratio=2.0, margin_balance=8.36e9, margin_buy_amount=2.9e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 16), fund_net_inflow=7.5e7, fund_net_inflow_ratio=2.1, margin_balance=8.48e9, margin_buy_amount=3.0e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 19), fund_net_inflow=8.0e7, fund_net_inflow_ratio=2.4, margin_balance=8.60e9, margin_buy_amount=3.1e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 20), fund_net_inflow=9.5e7, fund_net_inflow_ratio=2.7, margin_balance=8.76e9, margin_buy_amount=3.3e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 21), fund_net_inflow=1.0e8, fund_net_inflow_ratio=2.9, margin_balance=8.84e9, margin_buy_amount=3.5e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 22), fund_net_inflow=1.2e8, fund_net_inflow_ratio=3.1, margin_balance=8.92e9, margin_buy_amount=3.8e8),
+        FundFactor(symbol="600519", trade_date=date(2026, 5, 23), fund_net_inflow=1.5e8, fund_net_inflow_ratio=3.6, margin_balance=9.0e9, margin_buy_amount=4.2e8),
+    ]
+
+
 class FakeStore:
     def __init__(self, *args, candles: list[Candle] | None = None, empty_first: bool = False, **kwargs):
         self.db_path = Path("fake.db")
@@ -52,7 +67,7 @@ class FakeFundStore:
         self.db_path = Path("fake_fund.db")
         self.factors = list(factors or [])
 
-    def get_latest(self, symbol: str, limit: int = 5) -> list[FundFactor]:
+    def get_latest(self, symbol: str, limit: int = 15) -> list[FundFactor]:
         return [factor for factor in self.factors if factor.symbol == symbol][-limit:]
 
 
@@ -127,6 +142,13 @@ class ApiTests(unittest.TestCase):
         self.assertIn("重新加载资金面数据", response.text)
         self.assertIn("数据更新时间", response.text)
         self.assertIn("样本交易日数", response.text)
+        self.assertIn("3日累计主力净流入", response.text)
+        self.assertIn("5日累计主力净流入", response.text)
+        self.assertIn("10日累计主力净流入", response.text)
+        self.assertIn("连续净流入天数", response.text)
+        self.assertIn("融资余额3日斜率", response.text)
+        self.assertIn("融资余额3日加速度", response.text)
+        self.assertIn("结论类型", response.text)
         self.assertIn("id='fund-view'", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)
@@ -354,26 +376,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
 
     def test_fund_analysis_endpoint_returns_scored_summary(self):
-        fund_store = FakeFundStore(
-            factors=[
-                FundFactor(
-                    symbol="600519",
-                    trade_date=date(2026, 5, 22),
-                    fund_net_inflow=8.0e7,
-                    fund_net_inflow_ratio=1.6,
-                    margin_balance=8.5e9,
-                    margin_buy_amount=3.1e8,
-                ),
-                FundFactor(
-                    symbol="600519",
-                    trade_date=date(2026, 5, 23),
-                    fund_net_inflow=1.5e8,
-                    fund_net_inflow_ratio=3.6,
-                    margin_balance=9.0e9,
-                    margin_buy_amount=4.2e8,
-                ),
-            ]
-        )
+        fund_store = FakeFundStore(factors=_sample_fund_factors())
 
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
             "kronos_mvp.api.FundFactorStore", return_value=fund_store
@@ -387,6 +390,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["symbol"], "600519")
         self.assertEqual(payload["analysis"]["signalLabel"], "偏多")
         self.assertGreaterEqual(payload["analysis"]["score"], 70)
+        self.assertEqual(payload["analysis"]["trendProfile"]["label"], "持续趋势")
+        self.assertEqual(payload["analysis"]["flowMetrics"]["consecutiveInflowDays"], 10)
+        self.assertAlmostEqual(payload["analysis"]["flowMetrics"]["netInflow10d"], 847000000.0)
+        self.assertEqual(len(payload["history"]), 10)
 
     def test_predict_requires_login(self):
         store = FakeStore()

@@ -8,17 +8,20 @@ from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 from kronos_mvp.cli import main
-from kronos_mvp.funds import FundSyncResult
+from kronos_mvp.funds import FundSyncWindowResult
 from kronos_mvp.models import SyncResult
 
 
 class CliTests(unittest.TestCase):
     def test_sync_funds_emits_summary(self):
         sync_service = Mock()
-        sync_service.sync_latest.return_value = FundSyncResult(
-            trade_date=date(2026, 5, 23),
-            provider="akshare",
+        sync_service.sync_recent.return_value = FundSyncWindowResult(
+            target_date=date(2026, 5, 23),
+            requested_days=15,
+            synced_trade_dates=(date(2026, 5, 9), date(2026, 5, 23)),
+            skipped_trade_dates=(date(2026, 5, 22),),
             rows=3800,
+            providers=("akshare",),
         )
 
         with tempfile.TemporaryDirectory() as tmp, patch(
@@ -28,9 +31,10 @@ class CliTests(unittest.TestCase):
         ), patch("kronos_mvp.cli.FundFactorSyncService", return_value=sync_service), redirect_stdout(io.StringIO()) as stdout:
             main()
 
-        sync_service.sync_latest.assert_called_once_with()
+        sync_service.sync_recent.assert_called_once_with(history_days=15)
         self.assertIn('"mode": "funds"', stdout.getvalue())
         self.assertIn('"rows": 3800', stdout.getvalue())
+        self.assertIn('"requestedDays": 15', stdout.getvalue())
 
     def test_sync_all_uses_market_symbol_list(self):
         sync_service = Mock()

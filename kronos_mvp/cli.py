@@ -9,7 +9,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from .funds import FundFactorStore, FundFactorSyncService, build_default_fund_providers
+from .funds import DEFAULT_FUND_HISTORY_DAYS, FundFactorStore, FundFactorSyncService, build_default_fund_providers
 from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .storage import CandleStore, normalize_symbol
@@ -46,7 +46,13 @@ def main() -> None:
     sync_parser.add_argument("--max-retries", type=int, default=int(os.getenv("SYNC_MAX_RETRIES", "2")))
     sync_parser.add_argument("--reset-progress", action="store_true", help="discard saved progress and rebuild the queue")
 
-    subparsers.add_parser("sync-funds", help="sync latest market-wide fund factors")
+    sync_fund_parser = subparsers.add_parser("sync-funds", help="sync recent market-wide fund factors")
+    sync_fund_parser.add_argument(
+        "--history-days",
+        type=int,
+        default=int(os.getenv("FUND_SYNC_HISTORY_DAYS", str(DEFAULT_FUND_HISTORY_DAYS))),
+        help="number of recent A-share trading sessions to keep incrementally in the fund cache",
+    )
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
@@ -183,15 +189,18 @@ def _run_symbol_sync(service: DataSyncService, symbols: list[str]) -> None:
 def _run_sync_funds(args: argparse.Namespace) -> None:
     store = FundFactorStore(args.fund_db)
     service = FundFactorSyncService(store=store, providers=build_default_fund_providers())
-    result = service.sync_latest()
+    result = service.sync_recent(history_days=args.history_days)
     print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
     print(
         json.dumps(
             {
                 "summary": {
                     "mode": "funds",
-                    "tradeDate": result.trade_date.isoformat(),
-                    "provider": result.provider,
+                    "targetDate": result.target_date.isoformat(),
+                    "requestedDays": result.requested_days,
+                    "syncedDays": len(result.synced_trade_dates),
+                    "skippedDays": len(result.skipped_trade_dates),
+                    "providers": list(result.providers),
                     "rows": result.rows,
                 }
             },

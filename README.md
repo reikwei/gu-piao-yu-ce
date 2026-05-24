@@ -97,13 +97,19 @@ powershell -ExecutionPolicy Bypass -File scripts/run_local_api.ps1
 
 当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页只负责输入股票代码；点击“开始预测”后才进入详情页。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。网页预测默认直接读取本地 SQLite 缓存，避免把页面请求绑在实时抓数上；生产数据刷新依赖每日 GitHub Actions，同步失败时不会拖垮前端预测请求。
 
-如果你希望本地先同步一次最新交易日的资金面快照，可以执行：
+如果你希望本地先同步最近半个月交易日的资金面数据，并在后续继续按缺口增量补齐，可以执行：
 
 ```powershell
-python -m kronos_mvp.cli --fund-db data/fund_factors.db sync-funds
+python -m kronos_mvp.cli --fund-db data/fund_factors.db sync-funds --history-days 15
 ```
 
-详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示四个第一版因子：资金净额、资金净流入占比、融资余额、融资买入额。
+`sync-funds` 现在默认维护最近 15 个 A 股交易日的资金面窗口：
+
+- 数据库里缺失的交易日会自动回补。
+- 最新交易日会在每次运行时重新刷新。
+- GitHub Actions 工作流也会按同样的增量策略执行，避免资金库永远只停在单日快照。
+
+详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。
 
 ## 运行测试
 

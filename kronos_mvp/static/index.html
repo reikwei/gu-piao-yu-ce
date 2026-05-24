@@ -903,7 +903,7 @@
       <button class='back-button' id='back-detail' type='button'>返回预测详情</button>
       <div class='topbar-copy'>
         <h1 id='fund-title'>股票资金面分析</h1>
-        <p id='fund-status'>展示最新交易日资金净额、融资趋势和综合结论。</p>
+        <p id='fund-status'>展示最近半个月资金净额、连续流向、融资趋势和综合结论。</p>
       </div>
       <div class='topbar-actions'>
         <button class='detail-action-button' id='reload-fund-analysis' type='button'>重新加载资金面数据</button>
@@ -1194,7 +1194,7 @@
             <div class='detail-headline'>
               <div>
                 <h2>资金面分析</h2>
-                <p id='fund-analysis-summary'>进入资金面分析页后，这里会展示最新交易日的资金净额、融资趋势和评分结果。</p>
+                <p id='fund-analysis-summary'>进入资金面分析页后，这里会展示最近半个月的主力资金累计流向、融资趋势和评分结果。</p>
               </div>
               <div class='fund-score-badge neutral' id='fund-score-badge'>等待加载</div>
             </div>
@@ -1224,6 +1224,36 @@
                 <strong id='fund-history-days-value'>--</strong>
               </div>
             </div>
+            <div class='meta-grid factor-grid'>
+              <div class='meta-item'>
+                <span>3日累计主力净流入</span>
+                <strong id='fund-net-inflow-3d-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>5日累计主力净流入</span>
+                <strong id='fund-net-inflow-5d-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>10日累计主力净流入</span>
+                <strong id='fund-net-inflow-10d-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>连续净流入天数</span>
+                <strong id='fund-consecutive-inflow-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>融资余额3日斜率</span>
+                <strong id='fund-margin-slope-3d-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>融资余额3日加速度</span>
+                <strong id='fund-margin-acceleration-3d-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>结论类型</span>
+                <strong id='fund-trend-profile-value'>--</strong>
+              </div>
+            </div>
             <div class='fund-helper-note' id='fund-margin-note' hidden></div>
             <div class='scenario-list component-copy' id='fund-component-list'>
               <div class='scenario-row neutral'>
@@ -1231,7 +1261,7 @@
                   <span class='scenario-title'>等待加载</span>
                   <span class='scenario-value'>--</span>
                 </header>
-                <p>进入资金面分析页后，会在这里展示四项因子的评分和解释。</p>
+                <p>进入资金面分析页后，会在这里展示多日资金因子的评分和解释。</p>
               </div>
             </div>
             <div class='status-text' id='fund-analysis-status'>等待加载资金面数据。</div>
@@ -1858,7 +1888,7 @@
 
     function renderFundAnalysisPlaceholder(symbol) {
       renderFundViewHeader(symbol, currentPredictionAnalysis);
-      document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析尚未加载。进入资金面分析页后，会展示最新交易日的四项因子与评分。`;
+      document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析尚未加载。进入资金面分析页后，会展示最近半个月的主力资金累计流向、融资趋势与评分。`;
       setFundScoreBadge('neutral', '等待加载');
       document.getElementById('fund-net-inflow-value').textContent = '--';
       document.getElementById('fund-net-ratio-value').textContent = '--';
@@ -1866,13 +1896,23 @@
       document.getElementById('fund-margin-buy-value').textContent = '--';
       document.getElementById('fund-updated-at-value').textContent = '--';
       document.getElementById('fund-history-days-value').textContent = '--';
+      document.getElementById('fund-net-inflow-3d-value').textContent = '--';
+      document.getElementById('fund-net-inflow-5d-value').textContent = '--';
+      document.getElementById('fund-net-inflow-10d-value').textContent = '--';
+      document.getElementById('fund-consecutive-inflow-value').textContent = '--';
+      document.getElementById('fund-margin-slope-3d-value').textContent = '--';
+      document.getElementById('fund-margin-acceleration-3d-value').textContent = '--';
+      document.getElementById('fund-trend-profile-value').textContent = '--';
       setFundMarginNote('');
       document.getElementById('fund-analysis-status').textContent = '等待加载资金面数据。';
-      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>进入资金面分析页后，会在这里展示四项因子的评分和解释。</p></div>`;
+      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>进入资金面分析页后，会在这里展示多日资金因子的评分和解释。</p></div>`;
     }
 
     function renderFundAnalysis(analysis) {
       const latest = analysis.latest || {};
+      const flowMetrics = analysis.flowMetrics || {};
+      const marginMetrics = analysis.marginMetrics || {};
+      const trendProfile = analysis.trendProfile || {};
       renderFundViewHeader(currentPredictionData ? currentPredictionData.symbol : latest.symbol, currentPredictionAnalysis, analysis);
       setFundScoreBadge(analysis.signal || 'neutral', `${analysis.signalLabel || '中性'} ${analysis.score || 0}/100`);
       document.getElementById('fund-analysis-summary').textContent = analysis.summary || '资金面分析已完成。';
@@ -1882,13 +1922,20 @@
       document.getElementById('fund-margin-buy-value').textContent = formatMoney(latest.marginBuyAmount);
       document.getElementById('fund-updated-at-value').textContent = formatDateTime(latest.updatedAt);
       document.getElementById('fund-history-days-value').textContent = `${analysis.historyDays || 1} 个交易日`;
+      document.getElementById('fund-net-inflow-3d-value').textContent = formatSignedMoney(flowMetrics.netInflow3d);
+      document.getElementById('fund-net-inflow-5d-value').textContent = formatSignedMoney(flowMetrics.netInflow5d);
+      document.getElementById('fund-net-inflow-10d-value').textContent = formatSignedMoney(flowMetrics.netInflow10d);
+      document.getElementById('fund-consecutive-inflow-value').textContent = formatTradeDayCount(flowMetrics.consecutiveInflowDays);
+      document.getElementById('fund-margin-slope-3d-value').textContent = formatSignedPercent(marginMetrics.balanceSlope3d);
+      document.getElementById('fund-margin-acceleration-3d-value').textContent = formatSignedPercent(marginMetrics.balanceAcceleration3d);
+      document.getElementById('fund-trend-profile-value').textContent = trendProfile.label || '--';
       setFundMarginNote(buildFundMarginNote(latest));
-      document.getElementById('fund-analysis-status').textContent = `截至 ${analysis.tradeDate || '--'}，已累计 ${analysis.historyDays || 1} 个交易日的资金面样本。`;
+      document.getElementById('fund-analysis-status').textContent = `截至 ${analysis.tradeDate || '--'}，已累计 ${analysis.historyDays || 1} 个交易日的资金面样本，系统会持续维护最近半个月的增量资金历史。`;
       document.getElementById('fund-component-list').innerHTML = (analysis.components || []).map(component => {
         const scoreText = `${component.score || 0}/25`;
-        const detail = component.changeRatio != null
+        const detail = component.detail || (component.changeRatio != null
           ? `${component.verdict}，较前一日变化 ${(component.changeRatio * 100).toFixed(2)}%。`
-          : `${component.verdict}。`;
+          : `${component.verdict}。`);
         return `<div class='scenario-row neutral'><header><span class='scenario-title'>${escapeHtml(component.label || '因子')}</span><span class='scenario-value'>${escapeHtml(scoreText)}</span></header><p>${escapeHtml(detail)}</p></div>`;
       }).join('') || `<div class='scenario-row neutral'><header><span class='scenario-title'>暂无评分</span><span class='scenario-value'>--</span></header><p>当前没有可展示的资金面解释。</p></div>`;
     }
@@ -1903,6 +1950,13 @@
       document.getElementById('fund-margin-buy-value').textContent = '--';
       document.getElementById('fund-updated-at-value').textContent = '--';
       document.getElementById('fund-history-days-value').textContent = '--';
+      document.getElementById('fund-net-inflow-3d-value').textContent = '--';
+      document.getElementById('fund-net-inflow-5d-value').textContent = '--';
+      document.getElementById('fund-net-inflow-10d-value').textContent = '--';
+      document.getElementById('fund-consecutive-inflow-value').textContent = '--';
+      document.getElementById('fund-margin-slope-3d-value').textContent = '--';
+      document.getElementById('fund-margin-acceleration-3d-value').textContent = '--';
+      document.getElementById('fund-trend-profile-value').textContent = '--';
       setFundMarginNote('');
       document.getElementById('fund-analysis-status').textContent = message;
       document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>未取得资金面数据</span><span class='scenario-value'>--</span></header><p>${escapeHtml(message)}</p></div>`;
@@ -1944,7 +1998,7 @@
         fundStatusEl.textContent = `${safeSymbol} / 资金面分析暂不可用 / ${errorMessage}`;
         return;
       }
-      fundStatusEl.textContent = `${safeSymbol} / Kronos ${kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--'} / 正在展示资金净额、融资趋势与综合结论`;
+      fundStatusEl.textContent = `${safeSymbol} / Kronos ${kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--'} / 正在展示半个月资金流向、融资趋势与综合结论`;
     }
 
     function renderCombinedConclusion(kronosAnalysis, fundAnalysis, fundError = '') {
@@ -1994,37 +2048,40 @@
 
       const kronosSignal = kronosAnalysis.signal || 'neutral';
       const fundSignal = fundAnalysis.signal || 'neutral';
+      const fundPattern = fundAnalysis.trendProfile ? fundAnalysis.trendProfile.label || '' : '';
+      const sustainedTrend = fundPattern === '持续趋势';
+      const singleDayAnomaly = fundPattern === '单日异动';
 
       if (kronosSignal === 'bullish' && fundSignal === 'bullish') {
         return {
           tone: 'bullish',
-          label: '偏强',
-          summary: 'Kronos 看多，资金面同步偏多，综合判断上调置信度。',
-          detail: '下周偏强，上涨概率维持偏高，资金净流入与融资趋势形成同向支撑。',
+          label: sustainedTrend ? '偏强' : '偏强待确认',
+          summary: sustainedTrend ? 'Kronos 看多，资金面属于持续趋势，综合判断上调置信度。' : 'Kronos 看多，资金面当前偏多，但更像单日异动。',
+          detail: sustainedTrend ? '下周偏强，上涨概率维持偏高，资金净流入与融资趋势形成同向支撑。' : '主模型仍偏强，但资金面还没有形成持续共振，先不要把单日放量当成稳定趋势。',
         };
       }
       if (kronosSignal === 'bearish' && fundSignal === 'bearish') {
         return {
           tone: 'bearish',
-          label: '偏弱',
-          summary: 'Kronos 看空，资金面同步偏空，综合判断上调看弱置信度。',
-          detail: '下周偏弱，主模型方向与资金面共振，短线承压概率较高。',
+          label: sustainedTrend ? '偏弱' : '偏弱待确认',
+          summary: sustainedTrend ? 'Kronos 看空，资金面属于持续走弱，综合判断上调看弱置信度。' : 'Kronos 看空，资金面偏弱，但仍要防止只是单日异动。',
+          detail: sustainedTrend ? '下周偏弱，主模型方向与资金面共振，短线承压概率较高。' : '主模型方向偏弱，但资金面持续性还不够强，暂时不要过度放大单日走弱。',
         };
       }
       if (kronosSignal === 'bullish' && fundSignal === 'bearish') {
         return {
           tone: 'neutral',
           label: '冲突',
-          summary: 'Kronos 看多，但资金面偏空，综合判断转为谨慎。',
-          detail: '方向仍偏强，但资金面明显冲突，建议下调对上涨路径的置信度。',
+          summary: singleDayAnomaly ? 'Kronos 看多，资金面偏空但更像单日异动，综合判断先转谨慎。' : 'Kronos 看多，但资金面偏空，综合判断转为谨慎。',
+          detail: singleDayAnomaly ? '方向仍偏强，不过资金面当日扰动和主模型相反，先观察后续是否继续流出。' : '方向仍偏强，但资金面明显冲突，建议下调对上涨路径的置信度。',
         };
       }
       if (kronosSignal === 'bearish' && fundSignal === 'bullish') {
         return {
           tone: 'neutral',
           label: '冲突',
-          summary: 'Kronos 看空，但资金面偏多，综合判断提示信号冲突。',
-          detail: '主模型方向偏弱，但资金面尚有承接，需要谨慎看待单边下跌结论。',
+          summary: singleDayAnomaly ? 'Kronos 看空，但资金面偏多且更像单日异动，综合判断提示先观察。' : 'Kronos 看空，但资金面偏多，综合判断提示信号冲突。',
+          detail: singleDayAnomaly ? '主模型方向偏弱，但资金面只是当日回流，先观察是否能延续成持续趋势。' : '主模型方向偏弱，但资金面尚有承接，需要谨慎看待单边下跌结论。',
         };
       }
       if (kronosSignal === 'neutral' && fundSignal === 'bullish') {
@@ -2422,6 +2479,13 @@
       }
       const ratio = Number(value) / 100;
       return formatSignedPercent(ratio);
+    }
+
+    function formatTradeDayCount(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      return `${Number(value)} 天`;
     }
 
     function formatDateTime(value) {
