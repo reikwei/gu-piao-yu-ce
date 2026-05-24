@@ -57,9 +57,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("./config.js", response.text)
         self.assertIn("土豆A股预测研究", response.text)
-        self.assertIn("上涨概率", response.text)
-        self.assertIn("波动放大概率", response.text)
-        self.assertIn("内部采样：默认 12 条路径", response.text)
+        self.assertIn("研究访问验证", response.text)
+        self.assertIn("返回首页", response.text)
+        self.assertIn("未来 7 个交易日", response.text)
+        self.assertNotIn("Kronos Probability Desk", response.text)
         self.assertNotIn('id="paths"', response.text)
 
     def test_config_js_uses_environment_values(self):
@@ -158,6 +159,30 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(analysis["pathCount"], 1)
         self.assertEqual(analysis["upsideProbability"], 1.0)
         self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
+
+    def test_predict_requires_password_when_access_protected(self):
+        store = FakeStore()
+        predictor = Mock()
+        predictor.predict.return_value = _sample_prediction_result()
+
+        with patch.dict(os.environ, {"APP_ACCESS_PASSWORD": "secret-pass"}, clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
+            client = TestClient(create_app())
+
+            status_response = client.get("/auth/status")
+            unauthorized = client.get("/api/predict/600519?auto_sync=false")
+            wrong = client.post("/auth/login", json={"password": "wrong"})
+            correct = client.post("/auth/login", json={"password": "secret-pass"})
+            authorized = client.get("/api/predict/600519?auto_sync=false")
+
+        self.assertEqual(status_response.status_code, 200)
+        self.assertTrue(status_response.json()["protected"])
+        self.assertFalse(status_response.json()["authorized"])
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(correct.status_code, 200)
+        self.assertEqual(authorized.status_code, 200)
 
 
 if __name__ == "__main__":

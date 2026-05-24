@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from .models import SyncResult
@@ -17,6 +20,12 @@ from .sync import DataSyncService
 
 
 load_dotenv()
+
+ACCESS_COOKIE_NAME = "kronos_access"
+
+
+class LoginRequest(BaseModel):
+    password: str
 
 
 def create_app() -> FastAPI:
@@ -33,12 +42,36 @@ def create_app() -> FastAPI:
         payload = json.dumps(_client_config(), ensure_ascii=False)
         return PlainTextResponse(f"window.KRONOS_CONFIG = {payload};\n", media_type="application/javascript")
 
+    @app.get("/auth/status")
+    def auth_status(request: Request) -> dict[str, object]:
+        return {
+            "protected": _is_access_protected(),
+            "authorized": _is_request_authorized(request),
+        }
+
+    @app.post("/auth/login")
+    def auth_login(payload: LoginRequest, request: Request, response: Response) -> dict[str, object]:
+        if not _is_access_protected():
+            return {"protected": False, "authorized": True}
+        if not _is_valid_password(payload.password):
+            raise HTTPException(status_code=401, detail="invalid password")
+        response.set_cookie(
+            ACCESS_COOKIE_NAME,
+            _access_cookie_value(),
+            httponly=True,
+            samesite="lax",
+            secure=_request_is_https(request),
+            max_age=7 * 24 * 60 * 60,
+        )
+        return {"protected": True, "authorized": True}
+
     @app.get("/health")
     def health() -> dict[str, object]:
         return {"ok": True, "backend": "kronos", "db": str(store.db_path)}
 
     @app.post("/api/sync/{symbol}")
-    def sync_symbol(symbol: str) -> dict[str, object]:
+    def sync_symbol(symbol: str, request: Request) -> dict[str, object]:
+        _require_authorized_request(request)
         service = DataSyncService(store=store, providers=build_default_providers())
         try:
             return service.sync_symbol(symbol).__dict__
@@ -47,12 +80,14 @@ def create_app() -> FastAPI:
 
     @app.get("/api/predict/{symbol}")
     def predict_symbol(
+        request: Request,
         symbol: str,
-        horizon: int = 5,
+        horizon: int = 7,
         paths: int = 3,
         lookback: int = 512,
         auto_sync: bool = True,
     ) -> dict[str, object]:
+        _require_authorized_request(request)
         sync_info = {"attempted": False, "updated": False}
         if auto_sync:
             sync_info = _auto_sync_symbol(store, symbol)
@@ -97,6 +132,46 @@ def _build_predictor() -> KronosPredictor:
         tokenizer_name=os.getenv("KRONOS_TOKENIZER", "NeoQuasar/Kronos-Tokenizer-base"),
         device=os.getenv("KRONOS_DEVICE", "cpu"),
     )
+
+
+def _access_password() -> str:
+    return os.getenv("APP_ACCESS_PASSWORD", "")
+
+
+def _is_access_protected() -> bool:
+    return bool(_access_password())
+
+
+def _access_cookie_value() -> str:
+    secret = _access_password().encode("utf-8")
+    return hmac.new(secret, b"kronos-access", hashlib.sha256).hexdigest()
+
+
+def _is_valid_password(candidate: str) -> bool:
+    secret = _access_password()
+    if not secret:
+        return True
+    return hmac.compare_digest(candidate, secret)
+
+
+def _is_request_authorized(request: Request) -> bool:
+    if not _is_access_protected():
+        return True
+    token = request.cookies.get(ACCESS_COOKIE_NAME, "")
+    if not token:
+        return False
+    return hmac.compare_digest(token, _access_cookie_value())
+
+
+def _require_authorized_request(request: Request) -> None:
+    if _is_request_authorized(request):
+        return
+    raise HTTPException(status_code=401, detail="password required")
+
+
+def _request_is_https(request: Request) -> bool:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    return request.url.scheme == "https" or forwarded_proto == "https"
 
 
 def _build_prediction_analysis(candles: list, result, horizon: int) -> dict[str, object]:

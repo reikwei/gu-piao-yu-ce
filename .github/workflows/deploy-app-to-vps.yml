@@ -1,0 +1,119 @@
+name: Deploy App To VPS
+
+concurrency:
+  group: app-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .env.example
+      - .github/workflows/deploy-app-to-vps.yml
+      - README.md
+      - deploy/**
+      - kronos_mvp/**
+      - requirements.txt
+      - requirements.sync.txt
+      - scripts/**
+      - tests/**
+  workflow_dispatch:
+
+jobs:
+  deploy_app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DEPLOY_DIR: ${{ secrets.VPS_DATA_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package application archive
+        run: |
+          mkdir -p dist
+          tar \
+            --exclude=.git \
+            --exclude=.venv \
+            --exclude=data \
+            --exclude=.env \
+            --exclude=.env.* \
+            --exclude=push_git.bat \
+            -czf dist/app-deploy.tgz \
+            .
+
+      - name: Upload deploy archive via password
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DEPLOY_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
+          source: dist/app-deploy.tgz
+          target: /tmp/
+          overwrite: true
+
+      - name: Upload deploy archive via SSH key
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DEPLOY_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          source: dist/app-deploy.tgz
+          target: /tmp/
+          overwrite: true
+
+      - name: Deploy app on VPS via password
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DEPLOY_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_DIR: ${{ env.VPS_DEPLOY_DIR }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
+          envs: DEPLOY_DIR
+          script: |
+            set -e
+            DEPLOY_DIR="${DEPLOY_DIR%/}"
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+            rm -rf kronos_mvp deploy scripts tests .github
+            rm -f README.md requirements.txt requirements.sync.txt .env.example .gitignore
+            tar -xzf /tmp/app-deploy.tgz -C "$DEPLOY_DIR"
+            rm -f /tmp/app-deploy.tgz
+            if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
+              "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+            fi
+            systemctl restart yupiaoyuce.service
+            systemctl is-active yupiaoyuce.service
+
+      - name: Deploy app on VPS via SSH key
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DEPLOY_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_DIR: ${{ env.VPS_DEPLOY_DIR }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          envs: DEPLOY_DIR
+          script: |
+            set -e
+            DEPLOY_DIR="${DEPLOY_DIR%/}"
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+            rm -rf kronos_mvp deploy scripts tests .github
+            rm -f README.md requirements.txt requirements.sync.txt .env.example .gitignore
+            tar -xzf /tmp/app-deploy.tgz -C "$DEPLOY_DIR"
+            rm -f /tmp/app-deploy.tgz
+            if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
+              "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+            fi
+            systemctl restart yupiaoyuce.service
+            systemctl is-active yupiaoyuce.service

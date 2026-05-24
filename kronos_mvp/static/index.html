@@ -12,20 +12,20 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #edf2eb;
-      --bg-accent: #f7f2df;
-      --panel: rgba(255, 255, 255, 0.88);
-      --panel-strong: rgba(255, 255, 255, 0.96);
-      --ink: #17212f;
-      --muted: #617083;
-      --line: rgba(23, 33, 47, 0.1);
+      --bg: #eef2ea;
+      --bg-strong: #f8f4e6;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: rgba(255, 255, 255, 0.97);
+      --ink: #182231;
+      --muted: #667587;
+      --line: rgba(24, 34, 49, 0.1);
       --navy: #17324d;
-      --amber: #d6821f;
-      --amber-soft: rgba(214, 130, 31, 0.16);
+      --amber: #c67b1b;
+      --amber-soft: rgba(198, 123, 27, 0.16);
       --bull: #bf2f2f;
       --bear: #2f9965;
       --neutral: #4a6b8c;
-      --shadow: 0 20px 50px rgba(17, 24, 39, 0.08);
+      --shadow: 0 24px 56px rgba(17, 24, 39, 0.08);
       font-family: 'Noto Sans SC', sans-serif;
     }
 
@@ -35,174 +35,122 @@
       margin: 0;
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, rgba(23, 50, 77, 0.13), transparent 28%),
-        radial-gradient(circle at top right, rgba(214, 130, 31, 0.15), transparent 30%),
-        linear-gradient(180deg, var(--bg-accent), var(--bg));
+        radial-gradient(circle at top left, rgba(23, 50, 77, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(198, 123, 27, 0.14), transparent 30%),
+        linear-gradient(180deg, var(--bg-strong), var(--bg));
     }
 
     .page-shell {
-      width: min(1320px, calc(100vw - 32px));
+      width: min(1280px, calc(100vw - 26px));
       margin: 0 auto;
-      padding: 26px 0 42px;
+      padding: 20px 0 40px;
     }
 
-    .hero {
-      position: relative;
-      overflow: hidden;
-      padding: 30px 34px;
-      border-radius: 28px;
-      background: linear-gradient(135deg, #13263d, #1f3f5d 56%, #224766);
-      color: #f7fafc;
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+      padding: 14px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(14px);
       box-shadow: var(--shadow);
     }
 
-    .hero::after {
-      content: '';
-      position: absolute;
-      inset: auto -120px -110px auto;
-      width: 320px;
-      height: 320px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(244, 196, 116, 0.45), rgba(244, 196, 116, 0));
-      pointer-events: none;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
+    .back-button {
+      height: 42px;
+      padding: 0 18px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.12);
-      color: rgba(255, 255, 255, 0.86);
-      font: 600 12px 'Space Grotesk', sans-serif;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      border: 1px solid rgba(23, 50, 77, 0.1);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
     }
 
-    .hero-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
-      gap: 20px;
-      align-items: end;
-      position: relative;
-      z-index: 1;
-    }
+    .back-button:hover { box-shadow: 0 10px 20px rgba(23, 50, 77, 0.12); }
 
-    h1 {
-      margin: 16px 0 8px;
-      font: 700 clamp(30px, 4vw, 48px) 'Space Grotesk', 'Noto Sans SC', sans-serif;
+    .topbar-copy h1 {
+      margin: 0;
+      font: 700 22px 'Space Grotesk', 'Noto Sans SC', sans-serif;
       letter-spacing: -0.03em;
     }
 
-    .hero-copy p {
-      margin: 0;
-      max-width: 760px;
-      color: rgba(247, 250, 252, 0.78);
-      font-size: 15px;
-      line-height: 1.8;
-    }
-
-    .hero-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 16px;
-      color: rgba(247, 250, 252, 0.72);
-      font-size: 13px;
-    }
-
-    .hero-note {
-      padding: 18px 20px;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-    }
-
-    .hero-note strong {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 14px;
-      color: #fff7ec;
-    }
-
-    .hero-note p {
-      margin: 0;
-      color: rgba(247, 250, 252, 0.8);
-      font-size: 13px;
-      line-height: 1.75;
-    }
-
-    main {
-      margin-top: 22px;
-      display: grid;
-      gap: 18px;
-    }
-
-    .panel {
-      border: 1px solid rgba(255, 255, 255, 0.62);
-      border-radius: 24px;
-      background: var(--panel);
-      backdrop-filter: blur(12px);
-      box-shadow: var(--shadow);
-    }
-
-    .toolbar {
-      padding: 20px 22px;
-      display: grid;
-      gap: 14px;
-    }
-
-    .toolbar-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: center;
-    }
-
-    .toolbar-head h2 {
-      margin: 0;
-      font-size: 20px;
-    }
-
-    .toolbar-head p {
+    .topbar-copy p {
       margin: 4px 0 0;
       color: var(--muted);
       font-size: 13px;
     }
 
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 38px;
-      padding: 0 14px;
-      border-radius: 999px;
-      border: 1px solid rgba(23, 50, 77, 0.08);
-      background: rgba(23, 50, 77, 0.05);
-      color: var(--navy);
-      font-size: 13px;
-      white-space: nowrap;
+    .view { min-height: calc(100vh - 120px); }
+
+    .centered {
+      display: grid;
+      place-items: center;
     }
 
-    .controls {
+    .card {
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .entry-card {
+      width: min(560px, 100%);
+      padding: 34px 30px;
+      text-align: center;
+    }
+
+    .entry-card h1 {
+      margin: 0;
+      font: 700 clamp(34px, 5vw, 52px) 'Space Grotesk', 'Noto Sans SC', sans-serif;
+      letter-spacing: -0.04em;
+    }
+
+    .entry-card p {
+      margin: 12px auto 0;
+      max-width: 420px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.8;
+    }
+
+    .entry-note {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      margin-top: 18px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgba(23, 50, 77, 0.06);
+      color: var(--navy);
+      font-size: 13px;
+    }
+
+    .input-stack {
       display: grid;
-      grid-template-columns: repeat(2, minmax(140px, 180px)) 1fr;
       gap: 12px;
-      align-items: end;
+      margin-top: 24px;
+      text-align: left;
     }
 
     label {
       display: grid;
-      gap: 7px;
+      gap: 8px;
       color: var(--muted);
       font-size: 13px;
     }
 
     input,
     button {
-      height: 46px;
-      border-radius: 14px;
+      height: 48px;
+      border-radius: 16px;
       border: 1px solid var(--line);
       font-size: 15px;
     }
@@ -210,59 +158,50 @@
     input {
       width: 100%;
       padding: 0 14px;
-      background: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.96);
       color: var(--ink);
       outline: none;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
     input:focus {
-      border-color: rgba(23, 50, 77, 0.38);
+      border-color: rgba(23, 50, 77, 0.36);
       box-shadow: 0 0 0 4px rgba(23, 50, 77, 0.08);
     }
 
-    .action-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: flex-end;
-      align-items: center;
-    }
-
-    button {
+    .primary-button {
       padding: 0 18px;
-      font-weight: 600;
+      border-color: #17324d;
+      background: linear-gradient(135deg, #17324d, #214768);
+      color: #f8fafc;
+      font-weight: 700;
       cursor: pointer;
-      transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
     }
 
-    button:hover {
+    .primary-button:hover {
       transform: translateY(-1px);
-      box-shadow: 0 10px 20px rgba(23, 50, 77, 0.12);
+      box-shadow: 0 12px 24px rgba(23, 50, 77, 0.14);
     }
 
-    button:disabled {
+    .primary-button:disabled {
       opacity: 0.6;
       cursor: wait;
       transform: none;
       box-shadow: none;
     }
 
-    #sync {
-      background: rgba(255, 255, 255, 0.92);
-      color: var(--navy);
-    }
-
-    #predict {
-      background: linear-gradient(135deg, #17324d, #214768);
-      border-color: #17324d;
-      color: #f8fafc;
-    }
-
-    #status {
-      min-height: 24px;
+    .status-text {
+      min-height: 22px;
+      margin-top: 12px;
       color: var(--muted);
       font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .detail-stack {
+      display: grid;
+      gap: 16px;
     }
 
     .metrics-grid,
@@ -276,7 +215,7 @@
     }
 
     .detail-grid {
-      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
     }
 
     .metric-card,
@@ -293,11 +232,11 @@
     .metric-card::after {
       content: '';
       position: absolute;
-      inset: auto -34px -40px auto;
-      width: 120px;
-      height: 120px;
+      inset: auto -40px -44px auto;
+      width: 128px;
+      height: 128px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(214, 130, 31, 0.14), rgba(214, 130, 31, 0));
+      background: radial-gradient(circle, rgba(198, 123, 27, 0.15), rgba(198, 123, 27, 0));
       pointer-events: none;
     }
 
@@ -305,9 +244,9 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
       color: var(--muted);
       font-size: 13px;
+      margin-bottom: 10px;
     }
 
     .metric-value {
@@ -324,27 +263,23 @@
     }
 
     .signal-card {
-      background: linear-gradient(145deg, rgba(23, 50, 77, 0.96), rgba(30, 61, 89, 0.96));
+      background: linear-gradient(145deg, rgba(46, 75, 104, 0.96), rgba(74, 107, 140, 0.92));
       color: #f8fafc;
     }
 
     .signal-card .metric-label,
-    .signal-card .metric-caption {
-      color: rgba(248, 250, 252, 0.76);
-    }
-
+    .signal-card .metric-caption { color: rgba(248, 250, 252, 0.78); }
     .signal-card.bullish { background: linear-gradient(145deg, rgba(164, 25, 31, 0.96), rgba(191, 47, 47, 0.92)); }
     .signal-card.bearish { background: linear-gradient(145deg, rgba(21, 89, 56, 0.96), rgba(47, 153, 101, 0.92)); }
     .signal-card.neutral { background: linear-gradient(145deg, rgba(46, 75, 104, 0.96), rgba(74, 107, 140, 0.92)); }
 
     .confidence-row {
-      margin-top: 16px;
       display: grid;
       gap: 8px;
+      margin-top: 16px;
     }
 
     .confidence-track {
-      position: relative;
       height: 10px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.16);
@@ -355,13 +290,13 @@
       display: block;
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, rgba(255, 241, 219, 0.8), #fff7ec);
       width: 0%;
+      background: linear-gradient(90deg, rgba(255, 241, 219, 0.84), #fff7ec);
       transition: width 0.28s ease;
     }
 
-    .detail-card h3,
-    .chart-card h3 {
+    .detail-card h2,
+    .chart-card h2 {
       margin: 0;
       font-size: 18px;
     }
@@ -383,15 +318,8 @@
     .meta-item {
       padding: 14px 16px;
       border-radius: 16px;
-      border: 1px solid rgba(23, 50, 77, 0.07);
-      background: rgba(248, 250, 252, 0.68);
-    }
-
-    .meta-item strong {
-      display: block;
-      margin-top: 4px;
-      font: 700 16px 'Space Grotesk', 'Noto Sans SC', sans-serif;
-      color: var(--navy);
+      border: 1px solid rgba(23, 50, 77, 0.08);
+      background: rgba(248, 250, 252, 0.76);
     }
 
     .meta-item span {
@@ -399,10 +327,17 @@
       font-size: 12px;
     }
 
+    .meta-item strong {
+      display: block;
+      margin-top: 5px;
+      font: 700 16px 'Space Grotesk', 'Noto Sans SC', sans-serif;
+      color: var(--navy);
+    }
+
     .scenario-list {
-      margin-top: 16px;
       display: grid;
       gap: 10px;
+      margin-top: 16px;
     }
 
     .scenario-row {
@@ -411,7 +346,7 @@
       padding: 16px;
       border-radius: 18px;
       border: 1px solid rgba(23, 50, 77, 0.08);
-      background: rgba(248, 250, 252, 0.72);
+      background: rgba(248, 250, 252, 0.76);
     }
 
     .scenario-row header {
@@ -421,11 +356,7 @@
       align-items: center;
     }
 
-    .scenario-title {
-      font-weight: 700;
-      color: var(--ink);
-    }
-
+    .scenario-title { font-weight: 700; }
     .scenario-value {
       font: 700 24px 'Space Grotesk', 'Noto Sans SC', sans-serif;
       letter-spacing: -0.04em;
@@ -434,11 +365,6 @@
     .scenario-row.bullish .scenario-value { color: var(--bull); }
     .scenario-row.bearish .scenario-value { color: var(--bear); }
     .scenario-row.neutral .scenario-value { color: var(--neutral); }
-
-    .scenario-row p {
-      margin: 0;
-      font-size: 13px;
-    }
 
     .chart-card {
       padding-bottom: 10px;
@@ -476,36 +402,40 @@
     }
 
     .dot.history { background: #cf5a4b; }
-    .dot.mean { background: #d6821f; }
-    .dot.band { background: rgba(214, 130, 31, 0.42); }
+    .dot.mean { background: #c67b1b; }
+    .dot.band { background: rgba(198, 123, 27, 0.42); }
 
     #chart {
-      height: min(76vh, 780px);
+      height: min(76vh, 760px);
       min-height: 460px;
     }
 
+    [hidden] { display: none !important; }
+
     @media (max-width: 1180px) {
       .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .detail-grid,
-      .hero-grid,
-      .controls { grid-template-columns: 1fr; }
-      .action-group { justify-content: flex-start; }
+      .detail-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 720px) {
       .page-shell {
         width: calc(100vw - 18px);
-        padding-top: 10px;
+        padding-top: 12px;
       }
-
-      .hero,
-      .toolbar,
-      .metric-card,
-      .detail-card,
-      .chart-card { padding: 18px; }
 
       .metrics-grid,
       .meta-grid { grid-template-columns: 1fr; }
+
+      .entry-card,
+      .metric-card,
+      .detail-card,
+      .chart-card,
+      .topbar { padding: 18px; }
+
+      .topbar {
+        align-items: start;
+        flex-direction: column;
+      }
 
       #chart { min-height: 380px; }
     }
@@ -513,231 +443,243 @@
 </head>
 <body>
   <div class='page-shell'>
-    <header class='hero'>
-      <div class='hero-grid'>
-        <div class='hero-copy'>
-          <div class='eyebrow'>Kronos Probability Desk</div>
-          <h1 id='site-title'>土豆A股预测研究</h1>
-          <p id='subtitle'>输入股票代码后，直接给出上涨概率、波动风险、终点区间和代表情景，而不是把多条路径原样堆给你看。</p>
-          <div class='hero-meta' id='hero-meta'>
-            <span>数据频率：A 股日线</span>
-            <span>模型：Kronos</span>
-            <span id='hero-meta-paths'>采样路径：默认 12 条</span>
-          </div>
-        </div>
-        <aside class='hero-note'>
-          <strong>研究模式说明</strong>
-          <p>页面展示的是基于多路径采样后的概率分析结果，适合做研究判断与走势对比，不构成投资建议。</p>
-        </aside>
+    <header class='topbar' id='detail-topbar' hidden>
+      <button class='back-button' id='back-home' type='button'>返回首页</button>
+      <div class='topbar-copy'>
+        <h1 id='detail-title'>股票概率预测</h1>
+        <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
       </div>
     </header>
 
     <main>
-      <section class='panel toolbar'>
-        <div class='toolbar-head'>
-          <div>
-            <h2>概率分析面板</h2>
-            <p>默认使用多路径采样生成均值预测与区间带，再提炼成可读的看涨/看跌判断。</p>
+      <section class='view centered' id='auth-view'>
+        <div class='card entry-card'>
+          <h1>研究访问验证</h1>
+          <p>输入访问密码以后，才会显示股票输入页面和后续预测结果。</p>
+          <div class='entry-note'>未来 7 个交易日 · 概率化股票预测</div>
+          <div class='input-stack'>
+            <label>访问密码
+              <input id='access-password' type='password' autocomplete='current-password' placeholder='请输入访问密码'>
+            </label>
+            <button class='primary-button' id='login-button' type='button'>进入页面</button>
           </div>
-          <div class='pill' id='sampling-pill'>内部采样：默认 12 条路径</div>
+          <div class='status-text' id='auth-status'>请输入访问密码。</div>
         </div>
-
-        <div class='controls'>
-          <label>股票代码
-            <input id='symbol' value='600519' inputmode='numeric' autocomplete='off'>
-          </label>
-          <label>预测天数
-            <input id='horizon' value='5' type='number' min='1' max='60'>
-          </label>
-          <div class='action-group'>
-            <button id='sync' type='button'>仅同步缓存</button>
-            <button id='predict' type='button'>开始分析</button>
-          </div>
-        </div>
-
-        <div id='status'>等待输入股票代码后开始分析。</div>
       </section>
 
-      <section class='metrics-grid'>
-        <article class='panel metric-card signal-card neutral' id='signal-card'>
-          <div class='metric-label'>方向判断</div>
-          <div class='metric-value' id='signal-value'>等待分析</div>
-          <div class='metric-caption' id='signal-caption'>模型会根据多路径终点分布，直接归纳为看涨、看跌或震荡。</div>
-          <div class='confidence-row'>
-            <div class='metric-label'>信号强度 <span id='confidence-text'>0.0%</span></div>
-            <div class='confidence-track'><span id='confidence-bar'></span></div>
+      <section class='view centered' id='home-view' hidden>
+        <div class='card entry-card'>
+          <h1 id='site-title'>土豆A股预测研究</h1>
+          <p id='subtitle'>输入股票代码，生成未来 7 个交易日的上涨概率、波动风险和代表情景。</p>
+          <div class='entry-note'>内部采样 12 条路径，仅输出研究结论，不展示全部原始路径。</div>
+          <div class='input-stack'>
+            <label>股票代码
+              <input id='symbol-input' value='600519' inputmode='numeric' autocomplete='off' placeholder='例如 600519'>
+            </label>
+            <button class='primary-button' id='predict-button' type='button'>开始预测</button>
           </div>
-        </article>
-
-        <article class='panel metric-card'>
-          <div class='metric-label'>上涨概率</div>
-          <div class='metric-value' id='upside-value'>--</div>
-          <div class='metric-caption'>未来 <span class='horizon-label'>--</span> 个交易日终点高于最新收盘价的概率。</div>
-        </article>
-
-        <article class='panel metric-card'>
-          <div class='metric-label'>波动放大概率</div>
-          <div class='metric-value' id='volatility-value'>--</div>
-          <div class='metric-caption'>未来 <span class='horizon-label'>--</span> 个交易日的预测波动超过近期历史波动的概率。</div>
-        </article>
-
-        <article class='panel metric-card'>
-          <div class='metric-label'>均值终点 / 预期涨跌幅</div>
-          <div class='metric-value' id='expected-value'>--</div>
-          <div class='metric-caption' id='expected-caption'>先运行分析，再查看均值终点和终点区间。</div>
-        </article>
-      </section>
-
-      <section class='detail-grid'>
-        <article class='panel detail-card'>
-          <h3>结论摘要</h3>
-          <p id='analysis-summary'>这里会根据多路径分布，给出更像研究报告的摘要，而不是只展示原始路径线条。</p>
-          <div class='meta-grid'>
-            <div class='meta-item'>
-              <span>最近交易日</span>
-              <strong id='meta-date'>--</strong>
-            </div>
-            <div class='meta-item'>
-              <span>最新收盘价</span>
-              <strong id='meta-last-close'>--</strong>
-            </div>
-            <div class='meta-item'>
-              <span>采样路径数</span>
-              <strong id='meta-path-count'>--</strong>
-            </div>
-            <div class='meta-item'>
-              <span>终点价格区间</span>
-              <strong id='meta-range'>--</strong>
-            </div>
-          </div>
-        </article>
-
-        <article class='panel detail-card'>
-          <h3>代表情景</h3>
-          <p>保留看涨、基准、看跌三种代表轨迹，方便快速理解模型分布，而不是一口气看十几条线。</p>
-          <div class='scenario-list' id='scenario-list'>
-            <div class='scenario-row neutral'>
-              <header>
-                <span class='scenario-title'>等待分析</span>
-                <span class='scenario-value'>--</span>
-              </header>
-              <p>运行预测后，这里会展示最强、基准和最弱三种代表情景。</p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section class='panel chart-card'>
-        <div class='chart-head'>
-          <div>
-            <h3>概率预测图</h3>
-            <p>历史 K 线保留原始价格走势；未来部分只展示均值预测和区间带，减少视觉噪音。</p>
-          </div>
-          <div class='chart-legend'>
-            <span class='legend-pill'><span class='dot history'></span>历史 K 线</span>
-            <span class='legend-pill'><span class='dot mean'></span>均值预测</span>
-            <span class='legend-pill'><span class='dot band'></span>预测区间</span>
-          </div>
+          <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
         </div>
-        <div id='chart'></div>
+      </section>
+
+      <section class='view detail-stack' id='detail-view' hidden>
+        <section class='metrics-grid'>
+          <article class='card metric-card signal-card neutral' id='signal-card'>
+            <div class='metric-label'>方向判断</div>
+            <div class='metric-value' id='signal-value'>--</div>
+            <div class='metric-caption' id='signal-caption'>系统会根据未来 7 个交易日的终点分布，给出看涨、看跌或震荡判断。</div>
+            <div class='confidence-row'>
+              <div class='metric-label'>信号强度 <span id='confidence-text'>0.0%</span></div>
+              <div class='confidence-track'><span id='confidence-bar'></span></div>
+            </div>
+          </article>
+
+          <article class='card metric-card'>
+            <div class='metric-label'>上涨概率</div>
+            <div class='metric-value' id='upside-value'>--</div>
+            <div class='metric-caption'>未来 7 个交易日终点高于最新收盘价的概率。</div>
+          </article>
+
+          <article class='card metric-card'>
+            <div class='metric-label'>波动放大概率</div>
+            <div class='metric-value' id='volatility-value'>--</div>
+            <div class='metric-caption'>未来 7 个交易日的预测波动超过近期历史波动的概率。</div>
+          </article>
+
+          <article class='card metric-card'>
+            <div class='metric-label'>均值终点 / 预期涨跌幅</div>
+            <div class='metric-value' id='expected-value'>--</div>
+            <div class='metric-caption' id='expected-caption'>等待分析完成后显示均值终点和终点区间。</div>
+          </article>
+        </section>
+
+        <section class='detail-grid'>
+          <article class='card detail-card'>
+            <h2>结论摘要</h2>
+            <p id='analysis-summary'>预测完成后，这里会生成针对未来一周的结论摘要。</p>
+            <div class='meta-grid'>
+              <div class='meta-item'>
+                <span>最近交易日</span>
+                <strong id='meta-date'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>最新收盘价</span>
+                <strong id='meta-last-close'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>采样路径数</span>
+                <strong id='meta-path-count'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>终点价格区间</span>
+                <strong id='meta-range'>--</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class='card detail-card'>
+            <h2>代表情景</h2>
+            <p>保留看涨、基准、看跌三种代表情景，直接展示未来一周不同方向下的终点表现。</p>
+            <div class='scenario-list' id='scenario-list'>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>等待预测</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>先回到首页输入股票代码，再查看代表情景。</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class='card chart-card'>
+          <div class='chart-head'>
+            <div>
+              <h2>未来一周概率预测图</h2>
+              <p>历史 K 线保留真实走势，未来部分只展示均值预测、区间带和两侧代表情景。</p>
+            </div>
+            <div class='chart-legend'>
+              <span class='legend-pill'><span class='dot history'></span>历史 K 线</span>
+              <span class='legend-pill'><span class='dot mean'></span>均值预测</span>
+              <span class='legend-pill'><span class='dot band'></span>预测区间</span>
+            </div>
+          </div>
+          <div id='chart'></div>
+        </section>
       </section>
     </main>
   </div>
 
   <script>
     const runtimeConfig = window.KRONOS_CONFIG || {};
+    const DEFAULT_HORIZON = 7;
     const DEFAULT_PATHS = 12;
     const chart = echarts.init(document.getElementById('chart'));
-    const statusEl = document.getElementById('status');
-    const predictButton = document.getElementById('predict');
-    const syncButton = document.getElementById('sync');
-    const samplingPill = document.getElementById('sampling-pill');
-    const heroMetaPaths = document.getElementById('hero-meta-paths');
-    const horizonLabels = document.querySelectorAll('.horizon-label');
+    const views = {
+      auth: document.getElementById('auth-view'),
+      home: document.getElementById('home-view'),
+      detail: document.getElementById('detail-view'),
+    };
+    const detailTopbar = document.getElementById('detail-topbar');
+    const loginButton = document.getElementById('login-button');
+    const predictButton = document.getElementById('predict-button');
+    const authStatusEl = document.getElementById('auth-status');
+    const homeStatusEl = document.getElementById('home-status');
+    const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
-    samplingPill.textContent = `内部采样：默认 ${DEFAULT_PATHS} 条路径`;
-    heroMetaPaths.textContent = `采样路径：默认 ${DEFAULT_PATHS} 条`;
 
-    document.getElementById('predict').onclick = async () => {
-      const symbol = getValue('symbol');
-      const horizon = clampNumber(getValue('horizon'), 1, 60, 5);
-      await requestPrediction(symbol, horizon);
-    };
+    document.getElementById('back-home').addEventListener('click', () => {
+      showView('home');
+      homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
+    });
 
-    document.getElementById('sync').onclick = async () => {
-      const symbol = getValue('symbol');
-      await syncOnly(symbol);
-    };
+    document.getElementById('access-password').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loginButton.click();
+      }
+    });
 
-    document.getElementById('symbol').addEventListener('keydown', event => {
+    document.getElementById('symbol-input').addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
         predictButton.click();
       }
     });
 
-    document.getElementById('horizon').addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        predictButton.click();
-      }
-    });
+    loginButton.addEventListener('click', login);
+    predictButton.addEventListener('click', () => requestPrediction(document.getElementById('symbol-input').value.trim()));
 
     renderPlaceholderChart();
+    initialize();
 
-    async function syncOnly(symbol) {
-      if (!symbol) {
-        statusEl.textContent = '请先输入股票代码。';
+    async function initialize() {
+      const status = await fetchAuthStatus();
+      if (status.protected && !status.authorized) {
+        showView('auth');
         return;
       }
-      setBusy(true, `正在同步 ${symbol} 的缓存数据...`);
+      showView('home');
+    }
+
+    async function login() {
+      const password = document.getElementById('access-password').value;
+      if (!password) {
+        authStatusEl.textContent = '请输入访问密码。';
+        return;
+      }
+      setAuthBusy(true, '正在校验访问密码...');
       try {
-        const res = await fetch(buildApiUrl(`/api/sync/${symbol}`), { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) {
-          statusEl.textContent = data.detail || '同步失败';
-          return;
-        }
-        statusEl.textContent = `${data.symbol} / ${data.provider} / 已同步 ${data.rows} 条数据`;
+        await fetchJson(buildApiUrl('/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        document.getElementById('access-password').value = '';
+        authStatusEl.textContent = '校验成功。';
+        showView('home');
+        homeStatusEl.textContent = '请输入股票代码后点击预测。';
       } catch (error) {
-        statusEl.textContent = error.message || '同步失败';
+        authStatusEl.textContent = error.message || '密码校验失败';
       } finally {
-        setBusy(false);
+        setAuthBusy(false);
       }
     }
 
-    async function requestPrediction(symbol, horizon) {
+    async function requestPrediction(symbol) {
       if (!symbol) {
-        statusEl.textContent = '请先输入股票代码。';
+        homeStatusEl.textContent = '请先输入股票代码。';
         return;
       }
 
-      setBusy(true, `正在为 ${symbol} 生成概率分析...`);
+      setDetailBusy(true, `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的概率分析...`);
       try {
-        const url = buildApiUrl(`/api/predict/${symbol}?horizon=${horizon}&paths=${DEFAULT_PATHS}&auto_sync=true`);
-        const res = await fetch(url);
-        const data = await res.json();
-        if (!res.ok) {
-          statusEl.textContent = data.detail || '预测失败';
-          return;
-        }
-        const analysis = data.analysis || deriveAnalysis(data, horizon);
+        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=true`));
+        const analysis = data.analysis || deriveAnalysis(data, DEFAULT_HORIZON);
         const envelope = buildForecastEnvelope(data, analysis);
-        renderDashboard(data, analysis, envelope);
-        statusEl.textContent = buildPredictionStatus(data, analysis);
+        renderDetail(data, analysis, envelope);
+        showView('detail');
       } catch (error) {
-        statusEl.textContent = error.message || '预测失败';
+        if (error && error.authRequired) {
+          authStatusEl.textContent = '请先输入访问密码。';
+          showView('auth');
+        } else {
+          homeStatusEl.textContent = error.message || '预测失败';
+          showView('home');
+        }
       } finally {
-        setBusy(false);
+        setDetailBusy(false);
       }
     }
 
-    function renderDashboard(data, analysis, envelope) {
-      updateHorizonLabels(analysis.horizon);
+    function renderDetail(data, analysis, envelope) {
+      document.getElementById('detail-title').textContent = `${data.symbol} 概率预测详情`;
+      detailStatusEl.textContent = buildPredictionStatus(data, analysis);
+
       renderSignal(analysis);
       document.getElementById('upside-value').textContent = formatPercent(analysis.upsideProbability);
       document.getElementById('volatility-value').textContent = formatPercent(analysis.volatilityAmplificationProbability);
@@ -752,6 +694,46 @@
       document.getElementById('analysis-summary').textContent = buildNarrative(data, analysis);
       renderScenarioList(envelope.scenarios, analysis.lastClose);
       renderChart(data, analysis, envelope);
+    }
+
+    function showView(name) {
+      Object.entries(views).forEach(([key, element]) => {
+        element.hidden = key !== name;
+      });
+      detailTopbar.hidden = name !== 'detail';
+      if (name !== 'detail') {
+        chart.resize();
+      }
+    }
+
+    async function fetchAuthStatus() {
+      try {
+        return await fetchJson(buildApiUrl('/auth/status'));
+      } catch (error) {
+        return { protected: false, authorized: true };
+      }
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let payload = {};
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = {};
+        }
+      }
+      if (response.status === 401) {
+        const error = new Error(payload.detail || '需要先输入访问密码。');
+        error.authRequired = true;
+        throw error;
+      }
+      if (!response.ok) {
+        throw new Error(payload.detail || '请求失败');
+      }
+      return payload;
     }
 
     function renderSignal(analysis) {
@@ -892,7 +874,7 @@
             stack: 'forecast-band',
             symbol: 'none',
             lineStyle: { opacity: 0 },
-            areaStyle: { color: 'rgba(214, 130, 31, 0.18)' },
+            areaStyle: { color: 'rgba(198, 123, 27, 0.18)' },
           },
           {
             name: '均值预测',
@@ -900,7 +882,7 @@
             data: meanSeries,
             smooth: true,
             symbol: 'none',
-            lineStyle: { width: 3, color: '#d6821f' },
+            lineStyle: { width: 3, color: '#c67b1b' },
           },
           {
             name: '看涨情景',
@@ -908,7 +890,7 @@
             data: bullishSeries,
             smooth: true,
             symbol: 'none',
-            lineStyle: { width: 1.8, type: 'dashed', color: '#bf2f2f', opacity: 0.62 },
+            lineStyle: { width: 1.8, type: 'dashed', color: '#bf2f2f', opacity: 0.64 },
           },
           {
             name: '看跌情景',
@@ -916,7 +898,7 @@
             data: bearishSeries,
             smooth: true,
             symbol: 'none',
-            lineStyle: { width: 1.8, type: 'dashed', color: '#2f9965', opacity: 0.62 },
+            lineStyle: { width: 1.8, type: 'dashed', color: '#2f9965', opacity: 0.64 },
           },
           {
             name: '最新收盘',
@@ -942,7 +924,7 @@
         animation: false,
         backgroundColor: 'transparent',
         title: {
-          text: '输入股票代码后开始概率分析',
+          text: '先完成登录并输入股票代码，再生成未来一周预测图',
           left: 'center',
           top: 'center',
           textStyle: { color: '#64748b', fontSize: 18, fontWeight: 500 },
@@ -1049,7 +1031,7 @@
       const lastDate = analysis.lastDate || '未知日期';
       const sync = data.sync || {};
       const syncClause = sync.updated
-        ? `本次先自动同步了 ${sync.provider} 的 ${sync.rows} 条最新数据。`
+        ? `本次自动同步了 ${sync.provider} 的 ${sync.rows} 条最新数据。`
         : sync.warning
           ? '同步阶段出现异常，当前结论基于本地缓存生成。'
           : '本次直接基于现有缓存生成结论。';
@@ -1059,58 +1041,48 @@
     function buildPredictionStatus(data, analysis) {
       const sync = data.sync || {};
       if (sync.updated) {
-        return `${data.symbol} / ${data.backend} / ${analysis.signalLabel} / 自动同步 ${sync.provider} ${sync.rows} 条 / lookback ${data.lookback}`;
+        return `${data.symbol} / ${analysis.signalLabel} / 已自动同步 ${sync.provider} ${sync.rows} 条 / lookback ${data.lookback}`;
       }
       if (sync.warning) {
-        return `${data.symbol} / ${data.backend} / ${analysis.signalLabel} / 同步失败，已使用本地缓存 / lookback ${data.lookback}`;
+        return `${data.symbol} / ${analysis.signalLabel} / 同步失败，已使用本地缓存 / lookback ${data.lookback}`;
       }
-      return `${data.symbol} / ${data.backend} / ${analysis.signalLabel} / lookback ${data.lookback}`;
+      return `${data.symbol} / ${analysis.signalLabel} / lookback ${data.lookback}`;
     }
 
     function buildSignalCaption(analysis) {
       const upside = formatPercent(analysis.upsideProbability || 0);
       const downside = formatPercent(analysis.downsideProbability || 0);
       if (analysis.signal === 'bullish') {
-        return `终点向上的路径占 ${upside}，终点向下的路径占 ${downside}。`;
+        return `未来一周终点向上的路径占 ${upside}，终点向下的路径占 ${downside}。`;
       }
       if (analysis.signal === 'bearish') {
-        return `终点向下的路径占 ${downside}，终点向上的路径占 ${upside}。`;
+        return `未来一周终点向下的路径占 ${downside}，终点向上的路径占 ${upside}。`;
       }
-      return `多空分布接近，当前更像区间震荡而不是单边趋势。`;
+      return '多空路径分布接近，当前更像震荡而不是单边趋势。';
     }
 
-    function setBusy(busy, message) {
-      predictButton.disabled = busy;
-      syncButton.disabled = busy;
+    function setAuthBusy(busy, message) {
+      loginButton.disabled = busy;
       if (message) {
-        statusEl.textContent = message;
+        authStatusEl.textContent = message;
+      }
+    }
+
+    function setDetailBusy(busy, message) {
+      predictButton.disabled = busy;
+      if (message) {
+        homeStatusEl.textContent = message;
       }
       if (busy) {
-        chart.showLoading('default', { text: 'Kronos 正在生成概率分析...', color: '#17324d', textColor: '#556579', maskColor: 'rgba(255,255,255,0.42)' });
+        chart.showLoading('default', { text: 'Kronos 正在生成未来一周概率分析...', color: '#17324d', textColor: '#556579', maskColor: 'rgba(255,255,255,0.42)' });
       } else {
         chart.hideLoading();
       }
     }
 
-    function updateHorizonLabels(horizon) {
-      horizonLabels.forEach(node => { node.textContent = horizon; });
-    }
-
     function buildApiUrl(path) {
       const base = (runtimeConfig.apiBaseUrl || '').replace(/\/$/, '');
       return `${base}${path}`;
-    }
-
-    function getValue(id) {
-      return document.getElementById(id).value.trim();
-    }
-
-    function clampNumber(value, low, high, fallbackValue) {
-      const numeric = Number(value);
-      if (!Number.isFinite(numeric)) {
-        return fallbackValue;
-      }
-      return Math.max(low, Math.min(high, Math.round(numeric)));
     }
 
     function formatPrice(value) {

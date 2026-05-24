@@ -10,9 +10,11 @@
 - 通过 Kronos 官方接口适配多路径预测输出。
 - 未来预测日期使用上交所交易日历，不再只按工作日推算。
 - 前端静态页支持运行时 API Base 配置，可直接给 Cloudflare Pages 使用。
-- 网页默认采用多路径采样做概率分析，直接展示看涨/看跌判断、上涨概率、波动风险、终点区间和代表情景，而不是把所有路径原样铺开。
+- 网页默认针对未来 7 个交易日做概率分析，直接展示看涨/看跌判断、上涨概率、波动风险、终点区间和代表情景，而不是把所有路径原样铺开。
+- 页面支持访问密码保护；输入正确密码后，先进入股票输入首页，再进入单股票详情页。
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
 - GitHub Actions 可在北京时间收盘后自动同步全市场 A 股，并把 SQLite 缓存上传到 VPS。
+- 推送到 GitHub main 后可自动把最新代码部署到 VPS，不覆盖 `data`、`.env` 和 `.venv`。
 
 ## 架构
 
@@ -55,6 +57,10 @@ Copy-Item .env.example .env
 
 其中 `PYTHONPATH` 应指向 Kronos 源码目录。默认建议使用 `vendor/Kronos`。
 
+如果你希望本地页面也受访问密码保护，可额外设置：
+
+- APP_ACCESS_PASSWORD
+
 4. 先同步一只股票的历史数据。
 
 ```powershell
@@ -85,9 +91,9 @@ python -m kronos_mvp.cli sync --all --market bj
 powershell -ExecutionPolicy Bypass -File scripts/run_local_api.ps1
 ```
 
-6. 打开 http://127.0.0.1:8000，直接点“预测”即可；如需单独补拉缓存，再点“仅同步缓存”。
+6. 打开 http://127.0.0.1:8000；如果配置了 `APP_ACCESS_PASSWORD`，先输入访问密码，再输入股票代码并点击“开始预测”。
 
-当前页面默认使用 12 条采样路径做概率分析，不再在网页上手动修改路径数。点击“预测”时会优先尝试同步最新股票数据；如果同步失败但本地缓存仍可用，页面会继续使用缓存完成预测。
+当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页只负责输入股票代码；点击“开始预测”后才进入详情页。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。点击“预测”时会优先尝试同步最新股票数据；如果同步失败但本地缓存仍可用，页面会继续使用缓存完成预测。
 
 ## 运行测试
 
@@ -116,6 +122,10 @@ python -m unittest discover -s tests -v
   APP_ALLOW_ORIGINS=https://你的-pages-域名
   APP_SITE_TITLE=土豆A股预测研究
   KRONOS_DEVICE=cpu
+
+如果需要页面访问密码，可额外设置：
+
+  APP_ACCESS_PASSWORD=你的访问密码
 
 - systemd 模板见 [deploy/systemd/kronos-mvp.service](deploy/systemd/kronos-mvp.service)
 - Nginx 反代模板见 [deploy/nginx/kronos-api.conf](deploy/nginx/kronos-api.conf)
@@ -146,7 +156,6 @@ python -m unittest discover -s tests -v
 - 全市场任务会拆成沪市、深市、北交所三个并行 job，各自维护独立 SQLite 分片和进度文件，最后再合并成单个 `candles.db` 上传到 VPS。
 - 每个分片 job 都会把 SQLite 分片和进度文件保存到 Actions cache；如果某次运行中断或部分失败，下次同分片任务会继续从剩余队列恢复，而不是从头再扫一遍。
 - 工作流启用了并发互斥和更长超时，避免上一次全市场任务还没结束时下一次调度重叠。
-- 网页上的“仅同步缓存”按钮主要用于手动补拉某只股票或临时刷新缓存。
 - 可选 Secrets：
 
   VPS_HOST
@@ -162,6 +171,15 @@ python -m unittest discover -s tests -v
 - 密钥登录：填写 VPS_HOST、VPS_USER、VPS_SSH_KEY、VPS_DATA_DIR。
 
 兼容旧配置：如果你以前误把 VPS 登录密码填进了 VPS_SSH_KEY，而不是私钥内容，当前 workflow 也会按密码处理；但后续还是建议把它迁到 VPS_PASSWORD，避免名字继续误导。
+
+## Git 推送后自动部署
+
+应用代码自动部署工作流是 [.github/workflows/deploy-app-to-vps.yml](.github/workflows/deploy-app-to-vps.yml)。
+
+- `push_git.bat` 只是负责提交并推送到 GitHub。
+- 当代码推送到 `main` 后，`deploy-app-to-vps.yml` 会单独触发，把最新代码打包并同步到 `/home/yupiaoyuce`。
+- 这个自动部署不会覆盖 `.env`、`.venv`、`data` 和 `vendor`，因此不会影响现有同步数据任务写入 SQLite。
+- 自动部署完成后只会重启线上 API 服务 `yupiaoyuce.service`，不会触发全市场数据同步。
 
 ### Git 上传规则
 
