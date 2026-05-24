@@ -1172,7 +1172,7 @@
     document.getElementById('admin-back-button').addEventListener('click', () => showView('home'));
 
     document.querySelectorAll('[data-account-tab]').forEach(button => {
-      button.addEventListener('click', () => showAccountPane(button.dataset.accountTab));
+      button.addEventListener('click', () => handleAccountTabClick(button.dataset.accountTab));
     });
 
     registerModal.addEventListener('click', event => {
@@ -1329,6 +1329,14 @@
       if (name !== 'welcome') {
         accountStatusEl.textContent = '';
       }
+    }
+
+    function handleAccountTabClick(name) {
+      if (name === 'logout') {
+        logout();
+        return;
+      }
+      showAccountPane(name);
     }
 
     function renderAccountState() {
