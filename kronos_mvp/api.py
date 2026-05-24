@@ -45,6 +45,7 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str
     password: str
+    contact: str | None = None
 
 
 class PaymentOrderRequest(BaseModel):
@@ -117,7 +118,7 @@ def create_app() -> FastAPI:
     @app.post("/api/auth/register")
     def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, object]:
         try:
-            user = account_store.create_user(payload.username, payload.password)
+            user = account_store.create_user(payload.username, payload.password, contact=payload.contact)
             _set_session_cookie(response, request, account_store.create_session(int(user["id"])))
             return {"user": public_user(user)}
         except AccountError as exc:

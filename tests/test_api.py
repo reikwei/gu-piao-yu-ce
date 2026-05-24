@@ -60,8 +60,11 @@ def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
     return env
 
 
-def _register(client: TestClient, username: str = "alice", password: str = "secret123") -> dict:
-    response = client.post("/api/auth/register", json={"username": username, "password": password})
+def _register(client: TestClient, username: str = "alice", password: str = "secret123", contact: str | None = None) -> dict:
+    payload = {"username": username, "password": password}
+    if contact is not None:
+        payload["contact"] = contact
+    response = client.post("/api/auth/register", json=payload)
     assert response.status_code == 200, response.text
     return response.json()["user"]
 
@@ -79,6 +82,11 @@ class ApiTests(unittest.TestCase):
         self.assertIn("土豆A股预测研究", response.text)
         self.assertIn("登录账户", response.text)
         self.assertIn("注册账号", response.text)
+        self.assertIn("确认密码", response.text)
+        self.assertIn("联系方式（可选）", response.text)
+        self.assertIn("QQ / 微信 / 电话都可以，不填也行", response.text)
+        self.assertIn("确认注册", response.text)
+        self.assertIn("取消", response.text)
         self.assertIn("进入账户中心", response.text)
         self.assertIn("土豆A股预测研究院用户中心", response.text)
         self.assertIn("欢迎进入用户后台", response.text)
@@ -94,6 +102,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("余额转包年", response.text)
         self.assertIn("修改密码", response.text)
         self.assertIn("后台用户管理", response.text)
+        self.assertIn("联系方式", response.text)
         self.assertIn("重置密码", response.text)
         self.assertIn("返回首页", response.text)
         self.assertIn("点击保存预测截图", response.text)
@@ -150,6 +159,27 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(user["balanceCents"], 0)
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["user"]["username"], "alice")
+
+    def test_register_accepts_optional_contact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp, APP_ACCESS_PASSWORD="secret-pass"), clear=False):
+                app = create_app()
+                user_client = TestClient(app)
+                admin_client = TestClient(app)
+
+                user = _register(user_client, username="alice", password="secret123", contact="微信 abc123")
+                me = user_client.get("/api/me")
+                admin_client.post("/auth/login", json={"password": "secret-pass"})
+                admin_users = admin_client.get("/api/admin/users")
+
+        self.assertEqual(user["contact"], "微信 abc123")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["user"]["contact"], "微信 abc123")
+        self.assertEqual(admin_users.status_code, 200)
+        self.assertEqual(
+            next(item for item in admin_users.json()["users"] if item["username"] == "alice")["contact"],
+            "微信 abc123",
+        )
 
     def test_payment_return_auto_redirects_to_home(self):
         with tempfile.TemporaryDirectory() as tmp:

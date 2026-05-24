@@ -22,6 +22,7 @@ SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 _PASSWORD_SCHEME = "pbkdf2_sha256"
 _PASSWORD_ROUNDS = 260_000
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\u4e00-\u9fff-]{3,32}$")
+_CONTACT_MAX_LENGTH = 80
 
 
 class AccountError(Exception):
@@ -153,6 +154,12 @@ class AccountStore:
                 CREATE INDEX IF NOT EXISTS idx_ledger_user ON wallet_ledger(user_id, created_at);
                 """
             )
+            self._ensure_user_columns(conn)
+
+    def _ensure_user_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "contact" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN contact TEXT")
 
     def bootstrap_admin(self, username: str, password: str | None) -> None:
         if not password:
@@ -183,10 +190,12 @@ class AccountStore:
                 (normalized, password_hash, now, now),
             )
 
-    def create_user(self, username: str, password: str, role: str = "user") -> sqlite3.Row:
+    def create_user(self, username: str, password: str, role: str = "user", contact: str | None = None) -> sqlite3.Row:
         normalized = normalize_username(username)
+        normalized_contact = normalize_contact(contact)
         validate_username(normalized)
         validate_password(password)
+        validate_contact(normalized_contact)
         if role not in {"user", "admin"}:
             raise AccountError("无效用户角色。")
         now = utc_now_text()
@@ -195,10 +204,10 @@ class AccountStore:
             with self._transaction() as conn:
                 cursor = conn.execute(
                     """
-                    INSERT INTO users(username, password_hash, role, free_credits_remaining, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO users(username, password_hash, role, free_credits_remaining, contact, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (normalized, hash_password(password), role, free_credits, now, now),
+                    (normalized, hash_password(password), role, free_credits, normalized_contact, now, now),
                 )
                 return self._get_user_by_id(conn, int(cursor.lastrowid))
         except sqlite3.IntegrityError as exc:
@@ -651,6 +660,13 @@ def normalize_username(username: str) -> str:
     return username.strip()
 
 
+def normalize_contact(contact: str | None) -> str | None:
+    if contact is None:
+        return None
+    normalized = contact.strip()
+    return normalized or None
+
+
 def validate_username(username: str) -> None:
     if not _USERNAME_PATTERN.fullmatch(username):
         raise AccountError("用户名需为 3-32 位，可使用中文、字母、数字、下划线、点或短横线。")
@@ -659,6 +675,11 @@ def validate_username(username: str) -> None:
 def validate_password(password: str) -> None:
     if len(password) < 6:
         raise AccountError("密码至少需要 6 位。")
+
+
+def validate_contact(contact: str | None) -> None:
+    if contact and len(contact) > _CONTACT_MAX_LENGTH:
+        raise AccountError("联系方式最多 80 个字符。")
 
 
 def hash_password(password: str) -> str:
@@ -720,6 +741,7 @@ def public_user(row: sqlite3.Row) -> dict[str, object]:
     return {
         "id": int(row["id"]),
         "username": row["username"],
+        "contact": row["contact"] or "",
         "role": row["role"],
         "isAdmin": row["role"] == "admin",
         "isBanned": bool(row["is_banned"]),

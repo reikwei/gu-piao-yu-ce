@@ -166,6 +166,39 @@
       font-size: 13px;
     }
 
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(24, 34, 49, 0.36);
+      backdrop-filter: blur(10px);
+    }
+
+    .register-dialog {
+      width: min(540px, 100%);
+      padding: 28px;
+    }
+
+    .register-dialog h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 28px;
+    }
+
+    .register-dialog p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    .register-actions {
+      margin-top: 18px;
+    }
+
     .input-stack {
       display: grid;
       gap: 12px;
@@ -409,7 +442,7 @@
     .admin-table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 980px;
+      min-width: 1080px;
       font-size: 13px;
     }
 
@@ -740,6 +773,32 @@
         </div>
       </section>
 
+      <div class='modal-backdrop' id='register-modal' role='dialog' aria-modal='true' aria-labelledby='register-title' hidden>
+        <div class='card register-dialog'>
+          <h2 id='register-title'>注册账号</h2>
+          <p>注册后可获得 10 次免费预测机会。</p>
+          <div class='input-stack'>
+            <label>账号
+              <input id='register-username' autocomplete='username' placeholder='请输入账号'>
+            </label>
+            <label>密码
+              <input id='register-password' type='password' autocomplete='new-password' placeholder='请输入密码，至少 6 位'>
+            </label>
+            <label>确认密码
+              <input id='register-password-confirm' type='password' autocomplete='new-password' placeholder='请再次输入密码'>
+            </label>
+            <label>联系方式（可选）
+              <input id='register-contact' autocomplete='tel' placeholder='QQ / 微信 / 电话都可以，不填也行'>
+            </label>
+            <div class='button-row register-actions'>
+              <button class='primary-button' id='register-submit-button' type='button'>确认注册</button>
+              <button class='secondary-button' id='register-cancel-button' type='button'>取消</button>
+            </div>
+          </div>
+          <div class='status-text' id='register-status'>填写信息后点击确认注册。</div>
+        </div>
+      </div>
+
       <section class='view centered' id='home-view' hidden>
         <div class='card entry-card'>
           <h1 id='site-title'>土豆A股预测研究</h1>
@@ -859,6 +918,7 @@
                 <tr>
                   <th>ID</th>
                   <th>用户名</th>
+                  <th>联系方式</th>
                   <th>角色</th>
                   <th>状态</th>
                   <th>免费次数</th>
@@ -979,9 +1039,13 @@
     const detailTopbar = document.getElementById('detail-topbar');
     const loginButton = document.getElementById('login-button');
     const registerButton = document.getElementById('register-button');
+    const registerModal = document.getElementById('register-modal');
+    const registerSubmitButton = document.getElementById('register-submit-button');
+    const registerCancelButton = document.getElementById('register-cancel-button');
     const predictButton = document.getElementById('predict-button');
     const captureButton = document.getElementById('capture-detail');
     const authStatusEl = document.getElementById('auth-status');
+    const registerStatusEl = document.getElementById('register-status');
     const homeStatusEl = document.getElementById('home-status');
     const accountStatusEl = document.getElementById('account-center-status');
     const adminStatusEl = document.getElementById('admin-status');
@@ -1023,7 +1087,9 @@
     });
 
     loginButton.addEventListener('click', login);
-    registerButton.addEventListener('click', registerAccount);
+    registerButton.addEventListener('click', openRegisterDialog);
+    registerSubmitButton.addEventListener('click', registerAccount);
+    registerCancelButton.addEventListener('click', closeRegisterDialog);
     predictButton.addEventListener('click', () => requestPrediction(document.getElementById('symbol-input').value.trim()));
     document.getElementById('account-center-button').addEventListener('click', openAccountCenter);
     document.getElementById('account-center-back').addEventListener('click', () => {
@@ -1042,6 +1108,25 @@
 
     document.querySelectorAll('[data-account-tab]').forEach(button => {
       button.addEventListener('click', () => showAccountPane(button.dataset.accountTab));
+    });
+
+    registerModal.addEventListener('click', event => {
+      if (event.target === registerModal) {
+        closeRegisterDialog();
+      }
+    });
+
+    document.querySelectorAll('#register-modal input').forEach(input => {
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          registerSubmitButton.click();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeRegisterDialog();
+        }
+      });
     });
 
     renderPlaceholderChart();
@@ -1085,29 +1170,52 @@
       }
     }
 
+    function openRegisterDialog() {
+      document.getElementById('register-username').value = document.getElementById('auth-username').value.trim();
+      document.getElementById('register-password').value = '';
+      document.getElementById('register-password-confirm').value = '';
+      document.getElementById('register-contact').value = '';
+      registerStatusEl.textContent = '填写信息后点击确认注册。';
+      registerModal.hidden = false;
+      requestAnimationFrame(() => document.getElementById('register-username').focus());
+    }
+
+    function closeRegisterDialog() {
+      registerModal.hidden = true;
+      setRegisterBusy(false);
+    }
+
     async function registerAccount() {
-      const username = document.getElementById('auth-username').value.trim();
-      const password = document.getElementById('auth-password').value;
-      if (!username || !password) {
-        authStatusEl.textContent = '请先输入用户名和密码。';
+      const username = document.getElementById('register-username').value.trim();
+      const password = document.getElementById('register-password').value;
+      const confirmPassword = document.getElementById('register-password-confirm').value;
+      const contact = document.getElementById('register-contact').value.trim();
+      if (!username || !password || !confirmPassword) {
+        registerStatusEl.textContent = '请填写账号、密码和确认密码。';
         return;
       }
-      setAuthBusy(true, '正在注册账户...');
+      if (password !== confirmPassword) {
+        registerStatusEl.textContent = '两次输入的密码不一致。';
+        return;
+      }
+      setRegisterBusy(true, '正在注册账户...');
       try {
         const payload = await fetchJson(buildApiUrl('/api/auth/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify({ username, password, contact }),
         });
         currentUser = payload.user;
+        closeRegisterDialog();
+        document.getElementById('auth-username').value = username;
         document.getElementById('auth-password').value = '';
         renderAccountState();
         showView('home');
         homeStatusEl.textContent = '注册成功，已获得 10 次免费预测机会。';
       } catch (error) {
-        authStatusEl.textContent = error.message || '注册失败';
+        registerStatusEl.textContent = error.message || '注册失败';
       } finally {
-        setAuthBusy(false);
+        setRegisterBusy(false);
       }
     }
 
@@ -1254,6 +1362,7 @@
         <tr data-user-id='${user.id}'>
           <td>${user.id}</td>
           <td>${escapeHtml(user.username)}</td>
+          <td>${escapeHtml(user.contact || '--')}</td>
           <td>${user.isAdmin ? '管理员' : '用户'}</td>
           <td>${user.isBanned ? '封禁' : '正常'}</td>
           <td>${user.freeCreditsRemaining}</td>
@@ -1914,6 +2023,14 @@
       registerButton.disabled = busy;
       if (message) {
         authStatusEl.textContent = message;
+      }
+    }
+
+    function setRegisterBusy(busy, message) {
+      registerSubmitButton.disabled = busy;
+      registerCancelButton.disabled = busy;
+      if (message) {
+        registerStatusEl.textContent = message;
       }
     }
 
