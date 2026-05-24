@@ -100,6 +100,8 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn("usdt", response.text)
         self.assertIn("充值包年", response.text)
         self.assertIn("余额转包年", response.text)
+        self.assertIn("floating-message", response.text)
+        self.assertIn("关闭提示", response.text)
         self.assertIn("修改密码", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)

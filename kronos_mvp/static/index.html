@@ -199,6 +199,49 @@
       margin-top: 18px;
     }
 
+    .floating-message {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      z-index: 30;
+      width: min(460px, calc(100vw - 32px));
+      padding: 18px 18px 18px 20px;
+      border: 1px solid rgba(23, 50, 77, 0.12);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 28px 70px rgba(17, 24, 39, 0.18);
+      transform: translate(-50%, -50%);
+    }
+
+    .floating-message-content {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .floating-message-text {
+      color: var(--navy);
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.7;
+    }
+
+    .floating-message-close {
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 999px;
+      border-color: rgba(23, 50, 77, 0.12);
+      background: rgba(248, 250, 252, 0.9);
+      color: var(--navy);
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+
     .input-stack {
       display: grid;
       gap: 12px;
@@ -799,6 +842,13 @@
         </div>
       </div>
 
+      <div class='floating-message' id='floating-message' role='status' aria-live='polite' hidden>
+        <div class='floating-message-content'>
+          <div class='floating-message-text' id='floating-message-text'></div>
+          <button class='floating-message-close' id='floating-message-close' type='button' aria-label='关闭提示'>×</button>
+        </div>
+      </div>
+
       <section class='view centered' id='home-view' hidden>
         <div class='card entry-card'>
           <h1 id='site-title'>土豆A股预测研究</h1>
@@ -1042,6 +1092,9 @@
     const registerModal = document.getElementById('register-modal');
     const registerSubmitButton = document.getElementById('register-submit-button');
     const registerCancelButton = document.getElementById('register-cancel-button');
+    const floatingMessage = document.getElementById('floating-message');
+    const floatingMessageText = document.getElementById('floating-message-text');
+    const floatingMessageClose = document.getElementById('floating-message-close');
     const predictButton = document.getElementById('predict-button');
     const captureButton = document.getElementById('capture-detail');
     const authStatusEl = document.getElementById('auth-status');
@@ -1055,6 +1108,7 @@
     const SCREENSHOT_WATERMARK_TEXT = 'wx：7354280';
     let html2CanvasLoader = null;
     let currentUser = null;
+    let floatingMessageTimer = null;
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
@@ -1090,6 +1144,7 @@
     registerButton.addEventListener('click', openRegisterDialog);
     registerSubmitButton.addEventListener('click', registerAccount);
     registerCancelButton.addEventListener('click', closeRegisterDialog);
+    floatingMessageClose.addEventListener('click', hideFloatingMessage);
     predictButton.addEventListener('click', () => requestPrediction(document.getElementById('symbol-input').value.trim()));
     document.getElementById('account-center-button').addEventListener('click', openAccountCenter);
     document.getElementById('account-center-back').addEventListener('click', () => {
@@ -1183,6 +1238,25 @@
     function closeRegisterDialog() {
       registerModal.hidden = true;
       setRegisterBusy(false);
+    }
+
+    function showFloatingMessage(message, timeoutMs = 8000) {
+      if (floatingMessageTimer) {
+        window.clearTimeout(floatingMessageTimer);
+      }
+      floatingMessageText.textContent = message;
+      floatingMessage.hidden = false;
+      if (timeoutMs > 0) {
+        floatingMessageTimer = window.setTimeout(hideFloatingMessage, timeoutMs);
+      }
+    }
+
+    function hideFloatingMessage() {
+      if (floatingMessageTimer) {
+        window.clearTimeout(floatingMessageTimer);
+        floatingMessageTimer = null;
+      }
+      floatingMessage.hidden = true;
     }
 
     async function registerAccount() {
@@ -1313,7 +1387,8 @@
         renderAccountState();
         accountStatusEl.textContent = '已成功转换包年。';
       } catch (error) {
-        accountStatusEl.textContent = error.message || '转换包年失败';
+        accountStatusEl.textContent = '';
+        showFloatingMessage(error.message || '转换包年失败');
       }
     }
 
