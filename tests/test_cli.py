@@ -3,14 +3,35 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 from kronos_mvp.cli import main
+from kronos_mvp.funds import FundSyncResult
 from kronos_mvp.models import SyncResult
 
 
 class CliTests(unittest.TestCase):
+    def test_sync_funds_emits_summary(self):
+        sync_service = Mock()
+        sync_service.sync_latest.return_value = FundSyncResult(
+            trade_date=date(2026, 5, 23),
+            provider="akshare",
+            rows=3800,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv", ["prog", "--fund-db", str(Path(tmp) / "fund_factors.db"), "sync-funds"]
+        ), patch("kronos_mvp.cli.FundFactorStore"), patch(
+            "kronos_mvp.cli.build_default_fund_providers", return_value=[]
+        ), patch("kronos_mvp.cli.FundFactorSyncService", return_value=sync_service), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        sync_service.sync_latest.assert_called_once_with()
+        self.assertIn('"mode": "funds"', stdout.getvalue())
+        self.assertIn('"rows": 3800', stdout.getvalue())
+
     def test_sync_all_uses_market_symbol_list(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [

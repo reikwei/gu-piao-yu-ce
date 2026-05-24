@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from .funds import FundFactorStore, build_fund_analysis
 from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=os.getenv("APP_SITE_TITLE", "土豆A股预测研究"), version="0.1.0")
     _configure_cors(app)
     store = CandleStore(os.getenv("KLINE_DB_PATH", "data/candles.db"))
+    fund_store = FundFactorStore(os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
     account_store = AccountStore(_account_db_path(store))
     account_store.bootstrap_admin(os.getenv("ADMIN_USERNAME", "admin"), os.getenv("ADMIN_PASSWORD") or _access_password())
     payment_client = SailaPayClient()
@@ -217,6 +219,18 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             account_store.mark_prediction_failed(int(usage["id"]), str(exc))
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/funds/{symbol}")
+    def fund_analysis(symbol: str, request: Request) -> dict[str, object]:
+        _require_current_user(request, account_store)
+        factors = fund_store.get_latest(symbol, limit=5)
+        if not factors:
+            raise HTTPException(status_code=404, detail="该股票暂无资金面数据，请等待每日 18:09 同步后重试。")
+        return {
+            "symbol": symbol,
+            "history": [factor.to_dict() for factor in factors],
+            "analysis": build_fund_analysis(factors),
+        }
 
     @app.post("/api/payments/orders")
     def create_payment_order(payload: PaymentOrderRequest, request: Request) -> dict[str, object]:

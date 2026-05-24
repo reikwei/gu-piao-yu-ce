@@ -1,0 +1,74 @@
+name: Update A-share Fund Data
+
+concurrency:
+  group: a-share-fund-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "9 10 * * 1-5"
+
+jobs:
+  update_fund_factors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FUND_DB_PATH: data/fund_factors.db
+      FUND_DATA_PROVIDERS: akshare
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DATA_DIR: ${{ secrets.VPS_DATA_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install data dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.sync.txt
+
+      - name: Restore fund cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.FUND_DB_PATH }}
+          key: a-share-fund-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            a-share-fund-${{ github.ref_name }}-
+
+      - name: Sync latest fund factors
+        run: |
+          mkdir -p data
+          python -m kronos_mvp.cli --fund-db "${FUND_DB_PATH}" sync-funds
+
+      - name: Save fund cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.FUND_DB_PATH }}
+          key: a-share-fund-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload fund cache to VPS via password
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
+          source: "data/fund_factors.db"
+          target: ${{ env.VPS_DATA_DIR }}
+
+      - name: Upload fund cache to VPS via SSH key
+        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          source: "data/fund_factors.db"
+          target: ${{ env.VPS_DATA_DIR }}

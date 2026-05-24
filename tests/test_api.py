@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 from kronos_mvp.api import create_app
+from kronos_mvp.funds import FundFactor
 from kronos_mvp.models import Candle, ForecastPath, PredictionPoint, PredictionResult, SyncResult
 from kronos_mvp.providers import ProviderError
 
@@ -44,6 +45,15 @@ class FakeStore:
         if self.empty_first and self.calls == 1:
             return []
         return list(self.candles)
+
+
+class FakeFundStore:
+    def __init__(self, *args, factors: list[FundFactor] | None = None, **kwargs):
+        self.db_path = Path("fake_fund.db")
+        self.factors = list(factors or [])
+
+    def get_latest(self, symbol: str, limit: int = 5) -> list[FundFactor]:
+        return [factor for factor in self.factors if factor.symbol == symbol][-limit:]
 
 
 def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
@@ -111,6 +121,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("确认新密码", response.text)
         self.assertIn("handleAccountTabClick", response.text)
         self.assertIn("name === 'logout'", response.text)
+        self.assertIn("资金面分析", response.text)
+        self.assertIn("综合结论", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)
         self.assertIn("重置密码", response.text)
@@ -335,6 +347,41 @@ class ApiTests(unittest.TestCase):
         self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
+
+    def test_fund_analysis_endpoint_returns_scored_summary(self):
+        fund_store = FakeFundStore(
+            factors=[
+                FundFactor(
+                    symbol="600519",
+                    trade_date=date(2026, 5, 22),
+                    fund_net_inflow=8.0e7,
+                    fund_net_inflow_ratio=1.6,
+                    margin_balance=8.5e9,
+                    margin_buy_amount=3.1e8,
+                ),
+                FundFactor(
+                    symbol="600519",
+                    trade_date=date(2026, 5, 23),
+                    fund_net_inflow=1.5e8,
+                    fund_net_inflow_ratio=3.6,
+                    margin_balance=9.0e9,
+                    margin_buy_amount=4.2e8,
+                ),
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.FundFactorStore", return_value=fund_store
+        ):
+            client = TestClient(create_app())
+            _register(client)
+            response = client.get("/api/funds/600519")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["symbol"], "600519")
+        self.assertEqual(payload["analysis"]["signalLabel"], "偏多")
+        self.assertGreaterEqual(payload["analysis"]["score"], 70)
 
     def test_predict_requires_login(self):
         store = FakeStore()

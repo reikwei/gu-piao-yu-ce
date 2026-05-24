@@ -9,6 +9,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from .funds import FundFactorStore, FundFactorSyncService, build_default_fund_providers
 from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .storage import CandleStore, normalize_symbol
@@ -25,6 +26,7 @@ load_dotenv()
 def main() -> None:
     parser = argparse.ArgumentParser(description="A-share Kronos MVP")
     parser.add_argument("--db", default=os.getenv("KLINE_DB_PATH", "data/candles.db"))
+    parser.add_argument("--fund-db", default=os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sync_parser = subparsers.add_parser("sync", help="sync daily K-line data")
@@ -43,6 +45,8 @@ def main() -> None:
     sync_parser.add_argument("--progress-file", help="progress JSON file used to resume interrupted all-market syncs")
     sync_parser.add_argument("--max-retries", type=int, default=int(os.getenv("SYNC_MAX_RETRIES", "2")))
     sync_parser.add_argument("--reset-progress", action="store_true", help="discard saved progress and rebuild the queue")
+
+    subparsers.add_parser("sync-funds", help="sync latest market-wide fund factors")
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
@@ -67,6 +71,8 @@ def main() -> None:
 
     if args.command == "sync":
         _run_sync(parser, args)
+    elif args.command == "sync-funds":
+        _run_sync_funds(args)
     elif args.command == "predict":
         store = CandleStore(args.db)
         candles = store.get_latest(args.symbol, limit=args.lookback)
@@ -167,6 +173,26 @@ def _run_symbol_sync(service: DataSyncService, symbols: list[str]) -> None:
                     "failed": 0,
                     "updated": updated,
                     "rows": total_rows,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def _run_sync_funds(args: argparse.Namespace) -> None:
+    store = FundFactorStore(args.fund_db)
+    service = FundFactorSyncService(store=store, providers=build_default_fund_providers())
+    result = service.sync_latest()
+    print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "mode": "funds",
+                    "tradeDate": result.trade_date.isoformat(),
+                    "provider": result.provider,
+                    "rows": result.rows,
                 }
             },
             ensure_ascii=False,

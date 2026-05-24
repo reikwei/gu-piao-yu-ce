@@ -118,6 +118,32 @@
       box-shadow: none;
     }
 
+    .detail-action-button {
+      min-width: 132px;
+      height: 42px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(23, 50, 77, 0.12);
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .detail-action-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(23, 50, 77, 0.12);
+    }
+
+    .detail-action-button:disabled {
+      opacity: 0.62;
+      cursor: wait;
+      transform: none;
+      box-shadow: none;
+    }
+
     .view { min-height: calc(100vh - 120px); }
 
     .centered {
@@ -643,6 +669,56 @@
       line-height: 1.8;
     }
 
+    .detail-headline {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .fund-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fund-score-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
+      min-height: 42px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(23, 50, 77, 0.08);
+      background: rgba(248, 250, 252, 0.92);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .fund-score-badge.bullish {
+      background: rgba(191, 47, 47, 0.12);
+      color: var(--bull);
+    }
+
+    .fund-score-badge.bearish {
+      background: rgba(47, 153, 101, 0.12);
+      color: var(--bear);
+    }
+
+    .fund-score-badge.neutral {
+      background: rgba(74, 107, 140, 0.14);
+      color: var(--neutral);
+    }
+
+    .factor-grid {
+      margin-top: 16px;
+    }
+
+    .component-copy {
+      margin-top: 14px;
+    }
+
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -749,7 +825,8 @@
 
     @media (max-width: 1180px) {
       .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .detail-grid { grid-template-columns: 1fr; }
+      .detail-grid,
+      .fund-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 720px) {
@@ -800,6 +877,7 @@
         <p id='detail-status'>未来 7 个交易日的方向判断、终点区间和代表情景。</p>
       </div>
       <div class='topbar-actions' data-screenshot-exclude='true'>
+        <button class='detail-action-button' id='fund-analysis-button' type='button'>资金面分析</button>
         <button class='capture-button' id='capture-detail' type='button'>点击保存预测截图</button>
       </div>
     </header>
@@ -1065,6 +1143,74 @@
           </article>
         </section>
 
+        <section class='detail-grid fund-grid'>
+          <article class='card detail-card'>
+            <div class='detail-headline'>
+              <div>
+                <h2>资金面分析</h2>
+                <p id='fund-analysis-summary'>点击顶部“资金面分析”按钮后，这里会展示最新交易日的资金净额、融资趋势和评分结果。</p>
+              </div>
+              <div class='fund-score-badge neutral' id='fund-score-badge'>等待加载</div>
+            </div>
+            <div class='meta-grid factor-grid'>
+              <div class='meta-item'>
+                <span>资金净额</span>
+                <strong id='fund-net-inflow-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>资金净流入占比</span>
+                <strong id='fund-net-ratio-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>融资余额</span>
+                <strong id='fund-margin-balance-value'>--</strong>
+              </div>
+              <div class='meta-item'>
+                <span>融资买入额</span>
+                <strong id='fund-margin-buy-value'>--</strong>
+              </div>
+            </div>
+            <div class='scenario-list component-copy' id='fund-component-list'>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>等待加载</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>点击顶部“资金面分析”按钮后，再查看四项因子的评分和解释。</p>
+              </div>
+            </div>
+            <div class='status-text' id='fund-analysis-status'>等待加载资金面数据。</div>
+          </article>
+
+          <article class='card detail-card'>
+            <h2>综合结论</h2>
+            <p id='combined-summary'>当前先显示 Kronos 主模型判断；点击顶部“资金面分析”按钮后，会补充资金面修正后的综合解释。</p>
+            <div class='scenario-list' id='combined-conclusion-list'>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>Kronos 主模型</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>等待预测完成后展示主模型结论。</p>
+              </div>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>资金面因子层</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>等待加载资金面分析。</p>
+              </div>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>综合判断</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>等待综合结论。</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
         <section class='card chart-card'>
           <div class='chart-head'>
             <div>
@@ -1106,6 +1252,7 @@
     const floatingMessageText = document.getElementById('floating-message-text');
     const floatingMessageClose = document.getElementById('floating-message-close');
     const predictButton = document.getElementById('predict-button');
+    const fundAnalysisButton = document.getElementById('fund-analysis-button');
     const captureButton = document.getElementById('capture-detail');
     const authStatusEl = document.getElementById('auth-status');
     const registerStatusEl = document.getElementById('register-status');
@@ -1119,6 +1266,9 @@
     let html2CanvasLoader = null;
     let currentUser = null;
     let floatingMessageTimer = null;
+    let currentPredictionData = null;
+    let currentPredictionAnalysis = null;
+    let currentFundAnalysis = null;
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
@@ -1127,6 +1277,7 @@
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
     });
+    fundAnalysisButton.addEventListener('click', () => loadFundAnalysis(true));
     captureButton.addEventListener('click', savePredictionScreenshot);
 
     document.getElementById('auth-password').addEventListener('keydown', event => {
@@ -1306,6 +1457,9 @@
     async function logout() {
       await fetchJson(buildApiUrl('/api/auth/logout'), { method: 'POST' }).catch(() => ({}));
       currentUser = null;
+      currentPredictionData = null;
+      currentPredictionAnalysis = null;
+      currentFundAnalysis = null;
       showView('auth');
       authStatusEl.textContent = '已退出登录。';
     }
@@ -1552,6 +1706,9 @@
         }
         const analysis = data.analysis || deriveAnalysis(data, DEFAULT_HORIZON);
         const envelope = buildForecastEnvelope(data, analysis);
+        currentPredictionData = data;
+        currentPredictionAnalysis = analysis;
+        currentFundAnalysis = null;
         showView('detail');
         renderDetail(data, analysis, envelope);
       } catch (error) {
@@ -1570,6 +1727,8 @@
     function renderDetail(data, analysis, envelope) {
       document.getElementById('detail-title').textContent = `${data.symbol} 概率预测详情`;
       detailStatusEl.textContent = buildPredictionStatus(data, analysis);
+      fundAnalysisButton.disabled = false;
+      fundAnalysisButton.textContent = '资金面分析';
 
       renderSignal(analysis);
       document.getElementById('upside-value').textContent = formatPercent(analysis.upsideProbability);
@@ -1584,7 +1743,193 @@
 
       document.getElementById('analysis-summary').textContent = buildNarrative(data, analysis);
       renderScenarioList(envelope.scenarios, analysis.lastClose);
+      renderFundAnalysisPlaceholder(data.symbol);
+      renderCombinedConclusion(analysis, null);
       renderChart(data, analysis, envelope);
+    }
+
+    async function loadFundAnalysis(scrollIntoView) {
+      if (!currentPredictionData) {
+        return;
+      }
+      fundAnalysisButton.disabled = true;
+      fundAnalysisButton.textContent = '加载中...';
+      document.getElementById('fund-analysis-status').textContent = `正在加载 ${currentPredictionData.symbol} 的资金面分析...`;
+      try {
+        const payload = await fetchJson(buildApiUrl(`/api/funds/${currentPredictionData.symbol}`));
+        currentFundAnalysis = payload.analysis || null;
+        if (!currentFundAnalysis) {
+          throw new Error('资金面分析结果为空。');
+        }
+        renderFundAnalysis(currentFundAnalysis);
+        renderCombinedConclusion(currentPredictionAnalysis, currentFundAnalysis);
+        if (scrollIntoView) {
+          document.getElementById('fund-analysis-summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } catch (error) {
+        currentFundAnalysis = null;
+        renderFundAnalysisUnavailable(error.message || '资金面数据暂不可用。');
+        renderCombinedConclusion(currentPredictionAnalysis, null, error.message || '资金面数据暂不可用。');
+        if (error && error.authRequired) {
+          authStatusEl.textContent = '请先登录账户。';
+          showView('auth');
+        }
+      } finally {
+        fundAnalysisButton.disabled = false;
+        fundAnalysisButton.textContent = '资金面分析';
+      }
+    }
+
+    function renderFundAnalysisPlaceholder(symbol) {
+      document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析尚未加载。点击顶部“资金面分析”按钮后，会展示最新交易日的四项因子与评分。`;
+      setFundScoreBadge('neutral', '等待加载');
+      document.getElementById('fund-net-inflow-value').textContent = '--';
+      document.getElementById('fund-net-ratio-value').textContent = '--';
+      document.getElementById('fund-margin-balance-value').textContent = '--';
+      document.getElementById('fund-margin-buy-value').textContent = '--';
+      document.getElementById('fund-analysis-status').textContent = '等待加载资金面数据。';
+      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>点击顶部“资金面分析”按钮后，再查看四项因子的评分和解释。</p></div>`;
+    }
+
+    function renderFundAnalysis(analysis) {
+      const latest = analysis.latest || {};
+      setFundScoreBadge(analysis.signal || 'neutral', `${analysis.signalLabel || '中性'} ${analysis.score || 0}/100`);
+      document.getElementById('fund-analysis-summary').textContent = analysis.summary || '资金面分析已完成。';
+      document.getElementById('fund-net-inflow-value').textContent = formatSignedMoney(latest.fundNetInflow);
+      document.getElementById('fund-net-ratio-value').textContent = formatSignedPercentFromNumber(latest.fundNetInflowRatio);
+      document.getElementById('fund-margin-balance-value').textContent = formatMoney(latest.marginBalance);
+      document.getElementById('fund-margin-buy-value').textContent = formatMoney(latest.marginBuyAmount);
+      document.getElementById('fund-analysis-status').textContent = `截至 ${analysis.tradeDate || '--'}，已累计 ${analysis.historyDays || 1} 个交易日的资金面样本。`;
+      document.getElementById('fund-component-list').innerHTML = (analysis.components || []).map(component => {
+        const scoreText = `${component.score || 0}/25`;
+        const detail = component.changeRatio != null
+          ? `${component.verdict}，较前一日变化 ${(component.changeRatio * 100).toFixed(2)}%。`
+          : `${component.verdict}。`;
+        return `<div class='scenario-row neutral'><header><span class='scenario-title'>${escapeHtml(component.label || '因子')}</span><span class='scenario-value'>${escapeHtml(scoreText)}</span></header><p>${escapeHtml(detail)}</p></div>`;
+      }).join('') || `<div class='scenario-row neutral'><header><span class='scenario-title'>暂无评分</span><span class='scenario-value'>--</span></header><p>当前没有可展示的资金面解释。</p></div>`;
+    }
+
+    function renderFundAnalysisUnavailable(message) {
+      setFundScoreBadge('neutral', '暂不可用');
+      document.getElementById('fund-analysis-summary').textContent = '资金面分析暂不可用。';
+      document.getElementById('fund-net-inflow-value').textContent = '--';
+      document.getElementById('fund-net-ratio-value').textContent = '--';
+      document.getElementById('fund-margin-balance-value').textContent = '--';
+      document.getElementById('fund-margin-buy-value').textContent = '--';
+      document.getElementById('fund-analysis-status').textContent = message;
+      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>未取得资金面数据</span><span class='scenario-value'>--</span></header><p>${escapeHtml(message)}</p></div>`;
+    }
+
+    function setFundScoreBadge(signal, text) {
+      const badge = document.getElementById('fund-score-badge');
+      badge.classList.remove('bullish', 'bearish', 'neutral');
+      badge.classList.add(signal || 'neutral');
+      badge.textContent = text;
+    }
+
+    function renderCombinedConclusion(kronosAnalysis, fundAnalysis, fundError = '') {
+      const list = document.getElementById('combined-conclusion-list');
+      const kronosLabel = kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--';
+      const fundLabel = fundAnalysis ? `${fundAnalysis.signalLabel || '中性'} ${fundAnalysis.score || 0}/100` : '未加载';
+      const combined = buildCombinedNarrative(kronosAnalysis, fundAnalysis, fundError);
+      document.getElementById('combined-summary').textContent = combined.summary;
+      list.innerHTML = [
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>Kronos 主模型</span><span class='scenario-value'>${escapeHtml(kronosLabel)}</span></header><p>${escapeHtml(buildKronosSummary(kronosAnalysis))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>资金面因子层</span><span class='scenario-value'>${escapeHtml(fundLabel)}</span></header><p>${escapeHtml(buildFundSummary(fundAnalysis, fundError))}</p></div>`,
+        `<div class='scenario-row ${combined.tone}'><header><span class='scenario-title'>综合判断</span><span class='scenario-value'>${escapeHtml(combined.label)}</span></header><p>${escapeHtml(combined.detail)}</p></div>`,
+      ].join('');
+    }
+
+    function buildKronosSummary(analysis) {
+      if (!analysis) {
+        return '等待预测完成后展示主模型结论。';
+      }
+      return `Kronos 判断 ${analysis.signalLabel || '震荡'}，未来 ${analysis.horizon || DEFAULT_HORIZON} 个交易日上涨概率 ${formatPercent(analysis.upsideProbability || 0)}。`;
+    }
+
+    function buildFundSummary(analysis, errorMessage) {
+      if (!analysis) {
+        return errorMessage || '点击顶部“资金面分析”按钮后加载资金面结论。';
+      }
+      return analysis.summary || `资金面评分 ${analysis.score || 0}/100，结论 ${analysis.signalLabel || '中性'}。`;
+    }
+
+    function buildCombinedNarrative(kronosAnalysis, fundAnalysis, fundError) {
+      if (!kronosAnalysis) {
+        return {
+          tone: 'neutral',
+          label: '--',
+          summary: '等待预测完成后生成综合结论。',
+          detail: '当前还没有 Kronos 主模型结果。',
+        };
+      }
+      if (!fundAnalysis) {
+        return {
+          tone: 'neutral',
+          label: kronosAnalysis.signalLabel || '震荡',
+          summary: fundError || '当前仍以 Kronos 主模型为主；点击顶部“资金面分析”按钮后可补充资金面修正。',
+          detail: `主模型当前判断为${kronosAnalysis.signalLabel || '震荡'}，资金面尚未加载，暂不调整置信度。`,
+        };
+      }
+
+      const kronosSignal = kronosAnalysis.signal || 'neutral';
+      const fundSignal = fundAnalysis.signal || 'neutral';
+
+      if (kronosSignal === 'bullish' && fundSignal === 'bullish') {
+        return {
+          tone: 'bullish',
+          label: '偏强',
+          summary: 'Kronos 看多，资金面同步偏多，综合判断上调置信度。',
+          detail: '下周偏强，上涨概率维持偏高，资金净流入与融资趋势形成同向支撑。',
+        };
+      }
+      if (kronosSignal === 'bearish' && fundSignal === 'bearish') {
+        return {
+          tone: 'bearish',
+          label: '偏弱',
+          summary: 'Kronos 看空，资金面同步偏空，综合判断上调看弱置信度。',
+          detail: '下周偏弱，主模型方向与资金面共振，短线承压概率较高。',
+        };
+      }
+      if (kronosSignal === 'bullish' && fundSignal === 'bearish') {
+        return {
+          tone: 'neutral',
+          label: '冲突',
+          summary: 'Kronos 看多，但资金面偏空，综合判断转为谨慎。',
+          detail: '方向仍偏强，但资金面明显冲突，建议下调对上涨路径的置信度。',
+        };
+      }
+      if (kronosSignal === 'bearish' && fundSignal === 'bullish') {
+        return {
+          tone: 'neutral',
+          label: '冲突',
+          summary: 'Kronos 看空，但资金面偏多，综合判断提示信号冲突。',
+          detail: '主模型方向偏弱，但资金面尚有承接，需要谨慎看待单边下跌结论。',
+        };
+      }
+      if (kronosSignal === 'neutral' && fundSignal === 'bullish') {
+        return {
+          tone: 'bullish',
+          label: '震荡偏强',
+          summary: 'Kronos 偏震荡，资金面偏多，综合判断转为震荡偏强。',
+          detail: '主模型没有给出明确单边结论，但资金面改善，短期更接近震荡偏强。',
+        };
+      }
+      if (kronosSignal === 'neutral' && fundSignal === 'bearish') {
+        return {
+          tone: 'bearish',
+          label: '震荡偏弱',
+          summary: 'Kronos 偏震荡，资金面偏空，综合判断转为震荡偏弱。',
+          detail: '主模型中性，资金面走弱，短线更接近震荡偏弱。',
+        };
+      }
+
+      return {
+        tone: kronosSignal === 'bullish' ? 'bullish' : kronosSignal === 'bearish' ? 'bearish' : 'neutral',
+        label: kronosAnalysis.signalLabel || '震荡',
+        summary: `Kronos 与资金面没有明显冲突，综合结论维持 ${kronosAnalysis.signalLabel || '震荡'}。`,
+        detail: '资金面作为辅助修正层，没有改变主模型的方向判断。',
+      };
     }
 
     async function savePredictionScreenshot() {
@@ -1930,6 +2275,30 @@
         yAxis: { show: false },
         series: [],
       }, true);
+    }
+
+    function formatMoney(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      return `${compactFormatter.format(Number(value))} 元`;
+    }
+
+    function formatSignedMoney(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      const amount = Number(value);
+      const prefix = amount > 0 ? '+' : '';
+      return `${prefix}${compactFormatter.format(amount)} 元`;
+    }
+
+    function formatSignedPercentFromNumber(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      const ratio = Number(value) / 100;
+      return formatSignedPercent(ratio);
     }
 
     function buildChartTooltip(params, envelope, historyCount) {
