@@ -123,6 +123,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("name === 'logout'", response.text)
         self.assertIn("资金面分析", response.text)
         self.assertIn("综合结论", response.text)
+        self.assertIn("返回预测详情", response.text)
+        self.assertIn("id='fund-view'", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)
         self.assertIn("重置密码", response.text)
