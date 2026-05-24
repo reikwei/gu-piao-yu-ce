@@ -81,12 +81,22 @@ jobs:
           script: |
             set -e
             DEPLOY_DIR="${DEPLOY_DIR%/}"
+            ARCHIVE_PATH=""
+            if [ -f /tmp/app-deploy.tgz ]; then
+              ARCHIVE_PATH=/tmp/app-deploy.tgz
+            elif [ -f /tmp/dist/app-deploy.tgz ]; then
+              ARCHIVE_PATH=/tmp/dist/app-deploy.tgz
+            else
+              echo "deploy archive not found"
+              exit 1
+            fi
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
             rm -rf kronos_mvp deploy scripts tests .github
             rm -f README.md requirements.txt requirements.sync.txt .env.example .gitignore
-            tar -xzf /tmp/app-deploy.tgz -C "$DEPLOY_DIR"
-            rm -f /tmp/app-deploy.tgz
+            tar -xzf "$ARCHIVE_PATH" -C "$DEPLOY_DIR"
+            rm -f /tmp/app-deploy.tgz "$ARCHIVE_PATH"
+            rm -rf /tmp/dist
             if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
               "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
             fi
@@ -106,12 +116,22 @@ jobs:
           script: |
             set -e
             DEPLOY_DIR="${DEPLOY_DIR%/}"
+            ARCHIVE_PATH=""
+            if [ -f /tmp/app-deploy.tgz ]; then
+              ARCHIVE_PATH=/tmp/app-deploy.tgz
+            elif [ -f /tmp/dist/app-deploy.tgz ]; then
+              ARCHIVE_PATH=/tmp/dist/app-deploy.tgz
+            else
+              echo "deploy archive not found"
+              exit 1
+            fi
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
             rm -rf kronos_mvp deploy scripts tests .github
             rm -f README.md requirements.txt requirements.sync.txt .env.example .gitignore
-            tar -xzf /tmp/app-deploy.tgz -C "$DEPLOY_DIR"
-            rm -f /tmp/app-deploy.tgz
+            tar -xzf "$ARCHIVE_PATH" -C "$DEPLOY_DIR"
+            rm -f /tmp/app-deploy.tgz "$ARCHIVE_PATH"
+            rm -rf /tmp/dist
             if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
               "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
             fi
