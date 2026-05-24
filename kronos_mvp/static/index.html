@@ -1752,7 +1752,7 @@
     function renderHomeAccountNote(user) {
       const quotaExhausted = isPredictionQuotaExhausted(user);
       accountNoteEl.textContent = quotaExhausted
-        ? '⚠️ 你的免费次数已用完\n请到账户中心充值。'
+        ? '⚠️ 你的免费次数已用完，请到账户中心充值。'
         : formatHomeAccountNote(user);
       accountNoteEl.classList.toggle('is-warning', quotaExhausted);
     }
