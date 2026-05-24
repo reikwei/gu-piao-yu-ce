@@ -181,6 +181,7 @@
     }
 
     input,
+    select,
     button {
       height: 48px;
       border-radius: 16px;
@@ -188,7 +189,8 @@
       font-size: 15px;
     }
 
-    input {
+    input,
+    select {
       width: 100%;
       padding: 0 14px;
       background: rgba(255, 255, 255, 0.96);
@@ -197,7 +199,8 @@
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
-    input:focus {
+    input:focus,
+    select:focus {
       border-color: rgba(23, 50, 77, 0.36);
       box-shadow: 0 0 0 4px rgba(23, 50, 77, 0.08);
     }
@@ -222,6 +225,105 @@
       cursor: wait;
       transform: none;
       box-shadow: none;
+    }
+
+    .secondary-button {
+      padding: 0 16px;
+      border-color: rgba(23, 50, 77, 0.12);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--navy);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .button-row,
+    .payment-row,
+    .admin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .button-row > *,
+    .payment-row > * { flex: 1 1 140px; }
+
+    .account-panel {
+      display: grid;
+      gap: 12px;
+      margin-top: 22px;
+      text-align: left;
+    }
+
+    .account-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .account-stat {
+      min-height: 86px;
+      padding: 13px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(23, 50, 77, 0.08);
+      background: rgba(248, 250, 252, 0.78);
+    }
+
+    .account-stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .account-stat strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--navy);
+      font: 700 18px 'Space Grotesk', 'Noto Sans SC', sans-serif;
+    }
+
+    .admin-panel {
+      width: min(1180px, 100%);
+      padding: 24px;
+    }
+
+    .admin-panel h1 { margin: 0; }
+
+    .admin-table-wrap {
+      margin-top: 18px;
+      overflow-x: auto;
+    }
+
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+      font-size: 13px;
+    }
+
+    .admin-table th,
+    .admin-table td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(23, 50, 77, 0.08);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .admin-table input {
+      width: 88px;
+      height: 36px;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+
+    .small-button {
+      height: 36px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border-color: rgba(23, 50, 77, 0.12);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
     }
 
     .status-text {
@@ -457,7 +559,8 @@
       }
 
       .metrics-grid,
-      .meta-grid { grid-template-columns: 1fr; }
+      .meta-grid,
+      .account-grid { grid-template-columns: 1fr; }
 
       .entry-card,
       .metric-card,
@@ -490,16 +593,22 @@
     <main>
       <section class='view centered' id='auth-view'>
         <div class='card entry-card'>
-          <h1>请输入登录密码</h1>
-          <p>确认密码以后，才会进入正常首页。</p>
-          <div class='entry-note'>请先完成登录验证</div>
+          <h1>登录账户</h1>
+          <p>注册后可获得 10 次免费预测机会；余额查询按 0.20 元 / 次扣费，20 元可转换包年。</p>
+          <div class='entry-note'>用户登录后进入预测首页</div>
           <div class='input-stack'>
-            <label>登录密码
-              <input id='access-password' type='password' autocomplete='current-password' placeholder='请输入访问密码'>
+            <label>用户名
+              <input id='auth-username' autocomplete='username' placeholder='请输入用户名'>
             </label>
-            <button class='primary-button' id='login-button' type='button'>进入页面</button>
+            <label>密码
+              <input id='auth-password' type='password' autocomplete='current-password' placeholder='请输入密码'>
+            </label>
+            <div class='button-row'>
+              <button class='primary-button' id='login-button' type='button'>登录</button>
+              <button class='secondary-button' id='register-button' type='button'>注册并领取 10 次</button>
+            </div>
           </div>
-          <div class='status-text' id='auth-status'>请先输入登录密码。</div>
+          <div class='status-text' id='auth-status'>请输入用户名和密码。</div>
         </div>
       </section>
 
@@ -507,7 +616,29 @@
         <div class='card entry-card'>
           <h1 id='site-title'>土豆A股预测研究</h1>
           <p id='subtitle'>输入股票代码，生成未来 7 个交易日的上涨概率、波动风险和代表情景。</p>
-          <div class='entry-note'>内部采样 12 条路径，仅输出研究结论，不展示全部原始路径。</div>
+          <div class='entry-note' id='account-note'>内部采样 12 条路径，仅输出研究结论，不展示全部原始路径。</div>
+          <div class='account-panel'>
+            <div class='account-grid'>
+              <div class='account-stat'><span>剩余免费次数</span><strong id='free-credits-value'>--</strong></div>
+              <div class='account-stat'><span>充值余额</span><strong id='balance-value'>--</strong></div>
+              <div class='account-stat'><span>包年状态</span><strong id='annual-value'>--</strong></div>
+            </div>
+            <div class='payment-row'>
+              <input id='recharge-amount' inputmode='decimal' value='10' placeholder='充值金额 1-200 元'>
+              <select id='pay-type'>
+                <option value='alipay'>支付宝</option>
+                <option value='wxpay'>微信支付</option>
+                <option value='usdt'>USDT</option>
+              </select>
+              <button class='secondary-button' id='recharge-button' type='button'>充值余额</button>
+              <button class='secondary-button' id='annual-button' type='button'>20 元包年</button>
+            </div>
+            <div class='button-row'>
+              <button class='secondary-button' id='convert-annual-button' type='button'>余额转包年</button>
+              <button class='secondary-button' id='admin-button' type='button' hidden>管理后台</button>
+              <button class='secondary-button' id='logout-button' type='button'>退出登录</button>
+            </div>
+          </div>
           <div class='input-stack'>
             <label>股票代码
               <input id='symbol-input' value='600519' inputmode='numeric' autocomplete='off' placeholder='例如 600519'>
@@ -515,6 +646,41 @@
             <button class='primary-button' id='predict-button' type='button'>开始预测</button>
           </div>
           <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
+        </div>
+      </section>
+
+      <section class='view centered' id='admin-view' hidden>
+        <div class='card admin-panel'>
+          <div class='chart-head'>
+            <div>
+              <h1>后台用户管理</h1>
+              <p>管理员可调整免费次数、余额、包年状态，也可以封禁或解封用户。</p>
+            </div>
+            <div class='admin-actions'>
+              <button class='secondary-button' id='admin-refresh-button' type='button'>刷新用户</button>
+              <button class='secondary-button' id='admin-back-button' type='button'>返回首页</button>
+            </div>
+          </div>
+          <div class='status-text' id='admin-status'>等待加载用户列表。</div>
+          <div class='admin-table-wrap'>
+            <table class='admin-table'>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>用户名</th>
+                  <th>角色</th>
+                  <th>状态</th>
+                  <th>免费次数</th>
+                  <th>余额</th>
+                  <th>包年</th>
+                  <th>调次数</th>
+                  <th>调余额</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id='admin-users-body'></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -614,19 +780,23 @@
     const views = {
       auth: document.getElementById('auth-view'),
       home: document.getElementById('home-view'),
+      admin: document.getElementById('admin-view'),
       detail: document.getElementById('detail-view'),
     };
     const detailTopbar = document.getElementById('detail-topbar');
     const loginButton = document.getElementById('login-button');
+    const registerButton = document.getElementById('register-button');
     const predictButton = document.getElementById('predict-button');
     const captureButton = document.getElementById('capture-detail');
     const authStatusEl = document.getElementById('auth-status');
     const homeStatusEl = document.getElementById('home-status');
+    const adminStatusEl = document.getElementById('admin-status');
     const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
     const SCREENSHOT_WATERMARK_TEXT = 'wx：7354280';
     let html2CanvasLoader = null;
+    let currentUser = null;
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
@@ -637,7 +807,14 @@
     });
     captureButton.addEventListener('click', savePredictionScreenshot);
 
-    document.getElementById('access-password').addEventListener('keydown', event => {
+    document.getElementById('auth-password').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loginButton.click();
+      }
+    });
+
+    document.getElementById('auth-username').addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
         loginButton.click();
@@ -652,7 +829,15 @@
     });
 
     loginButton.addEventListener('click', login);
+    registerButton.addEventListener('click', registerAccount);
     predictButton.addEventListener('click', () => requestPrediction(document.getElementById('symbol-input').value.trim()));
+    document.getElementById('logout-button').addEventListener('click', logout);
+    document.getElementById('recharge-button').addEventListener('click', () => createPaymentOrder('balance'));
+    document.getElementById('annual-button').addEventListener('click', () => createPaymentOrder('annual'));
+    document.getElementById('convert-annual-button').addEventListener('click', convertAnnual);
+    document.getElementById('admin-button').addEventListener('click', openAdminView);
+    document.getElementById('admin-refresh-button').addEventListener('click', loadAdminUsers);
+    document.getElementById('admin-back-button').addEventListener('click', () => showView('home'));
 
     renderPlaceholderChart();
     initialize();
@@ -663,30 +848,207 @@
         showView('auth');
         return;
       }
+      currentUser = status.user || null;
+      renderAccountState();
       showView('home');
     }
 
     async function login() {
-      const password = document.getElementById('access-password').value;
-      if (!password) {
-        authStatusEl.textContent = '请先输入登录密码。';
+      const username = document.getElementById('auth-username').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (!username || !password) {
+        authStatusEl.textContent = '请先输入用户名和密码。';
         return;
       }
-      setAuthBusy(true, '正在校验访问密码...');
+      setAuthBusy(true, '正在登录...');
       try {
-        await fetchJson(buildApiUrl('/auth/login'), {
+        const payload = await fetchJson(buildApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
+          body: JSON.stringify({ username, password }),
         });
-        document.getElementById('access-password').value = '';
-        authStatusEl.textContent = '密码校验成功。';
+        currentUser = payload.user;
+        document.getElementById('auth-password').value = '';
+        renderAccountState();
+        authStatusEl.textContent = '登录成功。';
         showView('home');
         homeStatusEl.textContent = '请输入股票代码后点击预测。';
       } catch (error) {
-        authStatusEl.textContent = error.message || '密码校验失败';
+        authStatusEl.textContent = error.message || '登录失败';
       } finally {
         setAuthBusy(false);
+      }
+    }
+
+    async function registerAccount() {
+      const username = document.getElementById('auth-username').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (!username || !password) {
+        authStatusEl.textContent = '请先输入用户名和密码。';
+        return;
+      }
+      setAuthBusy(true, '正在注册账户...');
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/auth/register'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        currentUser = payload.user;
+        document.getElementById('auth-password').value = '';
+        renderAccountState();
+        showView('home');
+        homeStatusEl.textContent = '注册成功，已获得 10 次免费预测机会。';
+      } catch (error) {
+        authStatusEl.textContent = error.message || '注册失败';
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function logout() {
+      await fetchJson(buildApiUrl('/api/auth/logout'), { method: 'POST' }).catch(() => ({}));
+      currentUser = null;
+      showView('auth');
+      authStatusEl.textContent = '已退出登录。';
+    }
+
+    function renderAccountState() {
+      if (!currentUser) {
+        return;
+      }
+      document.getElementById('account-note').textContent = `${currentUser.username}，每次普通查询扣 0.20 元，包年或管理员账号不扣费。`;
+      document.getElementById('free-credits-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.freeCreditsRemaining} 次`;
+      document.getElementById('balance-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.balanceYuan} 元`;
+      document.getElementById('annual-value').textContent = currentUser.isAdmin ? '管理员' : formatAnnualState(currentUser);
+      document.getElementById('admin-button').hidden = !currentUser.isAdmin;
+    }
+
+    function formatAnnualState(user) {
+      if (!user.annualActive) {
+        return '未开通';
+      }
+      return `至 ${String(user.annualUntil || '').slice(0, 10)}`;
+    }
+
+    async function refreshMe() {
+      const payload = await fetchJson(buildApiUrl('/api/me'));
+      currentUser = payload.user;
+      renderAccountState();
+    }
+
+    async function createPaymentOrder(orderType) {
+      const amount = orderType === 'annual' ? '20' : document.getElementById('recharge-amount').value.trim();
+      const payType = document.getElementById('pay-type').value;
+      homeStatusEl.textContent = orderType === 'annual' ? '正在创建 20 元包年订单...' : '正在创建充值订单...';
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/payments/orders'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amountYuan: amount, orderType, payType }),
+        });
+        const payment = payload.payment || {};
+        if (payment.payurl) {
+          window.open(payment.payurl, '_blank', 'noopener');
+          homeStatusEl.textContent = '支付页面已打开，支付完成后返回本页刷新状态。';
+          return;
+        }
+        if (payment.qrcode) {
+          homeStatusEl.textContent = `请复制或扫码支付：${payment.qrcode}`;
+          return;
+        }
+        if (payment.urlscheme) {
+          window.location.href = payment.urlscheme;
+          return;
+        }
+        homeStatusEl.textContent = '订单已创建，请根据支付平台提示完成付款。';
+      } catch (error) {
+        homeStatusEl.textContent = error.message || '创建支付订单失败';
+      }
+    }
+
+    async function convertAnnual() {
+      homeStatusEl.textContent = '正在转换包年...';
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/payments/convert-annual'), { method: 'POST' });
+        currentUser = payload.user;
+        renderAccountState();
+        homeStatusEl.textContent = '已成功转换包年。';
+      } catch (error) {
+        homeStatusEl.textContent = error.message || '转换包年失败';
+      }
+    }
+
+    async function openAdminView() {
+      showView('admin');
+      await loadAdminUsers();
+    }
+
+    async function loadAdminUsers() {
+      adminStatusEl.textContent = '正在加载用户列表...';
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/admin/users'));
+        renderAdminUsers(payload.users || []);
+        adminStatusEl.textContent = `已加载 ${(payload.users || []).length} 个用户。`;
+      } catch (error) {
+        adminStatusEl.textContent = error.message || '加载用户失败';
+      }
+    }
+
+    function renderAdminUsers(users) {
+      document.getElementById('admin-users-body').innerHTML = users.map(user => `
+        <tr data-user-id='${user.id}'>
+          <td>${user.id}</td>
+          <td>${escapeHtml(user.username)}</td>
+          <td>${user.isAdmin ? '管理员' : '用户'}</td>
+          <td>${user.isBanned ? '封禁' : '正常'}</td>
+          <td>${user.freeCreditsRemaining}</td>
+          <td>${user.balanceYuan} 元</td>
+          <td>${formatAnnualState(user)}</td>
+          <td><input data-admin-credit value='1'><button class='small-button' data-action='credits'>调整</button></td>
+          <td><input data-admin-balance value='1'><button class='small-button' data-action='balance'>调整</button></td>
+          <td>
+            <button class='small-button' data-action='${user.isBanned ? 'unban' : 'ban'}'>${user.isBanned ? '解封' : '封禁'}</button>
+            <button class='small-button' data-action='annual'>包年</button>
+            <button class='small-button' data-action='clearAnnual'>取消包年</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('[data-action]').forEach(button => {
+        button.addEventListener('click', () => runAdminAction(button));
+      });
+    }
+
+    async function runAdminAction(button) {
+      const row = button.closest('tr');
+      const userId = row.dataset.userId;
+      const action = button.dataset.action;
+      let url = `/api/admin/users/${userId}/${action}`;
+      let body = null;
+      if (action === 'credits') {
+        url = `/api/admin/users/${userId}/adjust-free-credits`;
+        body = { delta: Number(row.querySelector('[data-admin-credit]').value || 0), note: '后台调整免费次数' };
+      } else if (action === 'balance') {
+        url = `/api/admin/users/${userId}/adjust-balance`;
+        body = { deltaYuan: row.querySelector('[data-admin-balance]').value || '0', note: '后台调整余额' };
+      } else if (action === 'annual') {
+        url = `/api/admin/users/${userId}/set-annual`;
+        body = { days: 365 };
+      } else if (action === 'clearAnnual') {
+        url = `/api/admin/users/${userId}/set-annual`;
+        body = { days: null };
+      }
+      adminStatusEl.textContent = '正在提交后台操作...';
+      try {
+        await fetchJson(buildApiUrl(url), {
+          method: 'POST',
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        await loadAdminUsers();
+      } catch (error) {
+        adminStatusEl.textContent = error.message || '后台操作失败';
       }
     }
 
@@ -699,13 +1061,17 @@
       setDetailBusy(true, `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的概率分析...`);
       try {
         const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`));
+        if (data.billing && data.billing.me) {
+          currentUser = data.billing.me;
+          renderAccountState();
+        }
         const analysis = data.analysis || deriveAnalysis(data, DEFAULT_HORIZON);
         const envelope = buildForecastEnvelope(data, analysis);
         showView('detail');
         renderDetail(data, analysis, envelope);
       } catch (error) {
         if (error && error.authRequired) {
-          authStatusEl.textContent = '请先输入登录密码。';
+          authStatusEl.textContent = '请先登录账户。';
           showView('auth');
         } else {
           homeStatusEl.textContent = error.message || '预测失败';
@@ -860,7 +1226,7 @@
     }
 
     async function fetchJson(url, options = {}) {
-      const response = await fetch(url, options);
+      const response = await fetch(url, { credentials: 'include', ...options });
       const text = await response.text();
       let payload = {};
       if (text) {
@@ -871,7 +1237,7 @@
         }
       }
       if (response.status === 401) {
-        const error = new Error(payload.detail || '需要先输入访问密码。');
+        const error = new Error(payload.detail || '请先登录。');
         error.authRequired = true;
         throw error;
       }
@@ -1282,6 +1648,7 @@
 
     function setAuthBusy(busy, message) {
       loginButton.disabled = busy;
+      registerButton.disabled = busy;
       if (message) {
         authStatusEl.textContent = message;
       }
@@ -1302,6 +1669,15 @@
     function buildApiUrl(path) {
       const base = (runtimeConfig.apiBaseUrl || '').replace(/\/$/, '');
       return `${base}${path}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
     function formatPrice(value) {

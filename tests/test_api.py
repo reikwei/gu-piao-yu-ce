@@ -46,10 +46,30 @@ class FakeStore:
         return list(self.candles)
 
 
+def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
+    path = Path(tmp)
+    env = {
+        "KLINE_DB_PATH": str(path / "candles.db"),
+        "APP_DB_PATH": str(path / "app.db"),
+        "APP_ACCESS_PASSWORD": "",
+        "ADMIN_PASSWORD": "",
+        "SAILA_ID": "",
+        "SAILA_KEY": "",
+    }
+    env.update(overrides)
+    return env
+
+
+def _register(client: TestClient, username: str = "alice", password: str = "secret123") -> dict:
+    response = client.post("/api/auth/register", json={"username": username, "password": password})
+    assert response.status_code == 200, response.text
+    return response.json()["user"]
+
+
 class ApiTests(unittest.TestCase):
     def test_root_page_references_runtime_config(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.dict(os.environ, {"KLINE_DB_PATH": str(Path(tmp) / "candles.db")}, clear=False):
+            with patch.dict(os.environ, _test_env(tmp), clear=False):
                 client = TestClient(create_app())
 
                 response = client.get("/")
@@ -57,8 +77,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("./config.js", response.text)
         self.assertIn("土豆A股预测研究", response.text)
-        self.assertIn("请输入登录密码", response.text)
-        self.assertIn("确认密码以后，才会进入正常首页。", response.text)
+        self.assertIn("登录账户", response.text)
+        self.assertIn("注册并领取 10 次", response.text)
+        self.assertIn("充值余额", response.text)
+        self.assertIn("后台用户管理", response.text)
         self.assertIn("返回首页", response.text)
         self.assertIn("点击保存预测截图", response.text)
         self.assertIn("未来 7 个交易日", response.text)
@@ -68,7 +90,7 @@ class ApiTests(unittest.TestCase):
     def test_config_js_uses_environment_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {
-                "KLINE_DB_PATH": str(Path(tmp) / "candles.db"),
+                **_test_env(tmp),
                 "APP_API_BASE_URL": "https://api.example.com",
                 "APP_SITE_TITLE": "土豆A股预测研究",
             }
@@ -84,7 +106,7 @@ class ApiTests(unittest.TestCase):
     def test_cors_allows_configured_pages_origin(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {
-                "KLINE_DB_PATH": str(Path(tmp) / "candles.db"),
+                **_test_env(tmp),
                 "APP_ALLOW_ORIGINS": "https://stocks.example.com",
             }
             with patch.dict(os.environ, env, clear=False):
@@ -100,6 +122,20 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("access-control-allow-origin"), "https://stocks.example.com")
+        self.assertEqual(response.headers.get("access-control-allow-credentials"), "true")
+
+    def test_register_grants_ten_free_credits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp), clear=False):
+                client = TestClient(create_app())
+
+                user = _register(client)
+                me = client.get("/api/me")
+
+        self.assertEqual(user["freeCreditsRemaining"], 10)
+        self.assertEqual(user["balanceCents"], 0)
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["user"]["username"], "alice")
 
     def test_predict_auto_syncs_before_prediction_when_cache_is_missing(self):
         store = FakeStore(empty_first=True)
@@ -112,10 +148,13 @@ class ApiTests(unittest.TestCase):
         predictor = Mock()
         predictor.predict.return_value = _sample_prediction_result()
 
-        with patch("kronos_mvp.api.CandleStore", return_value=store), patch(
-            "kronos_mvp.api.DataSyncService", return_value=sync_service
-        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.DataSyncService", return_value=sync_service), patch(
+            "kronos_mvp.api.KronosPredictor", return_value=predictor
+        ):
             client = TestClient(create_app())
+            _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3")
 
         self.assertEqual(response.status_code, 200)
@@ -132,10 +171,13 @@ class ApiTests(unittest.TestCase):
         predictor = Mock()
         predictor.predict.return_value = _sample_prediction_result()
 
-        with patch("kronos_mvp.api.CandleStore", return_value=store), patch(
-            "kronos_mvp.api.DataSyncService", return_value=sync_service
-        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.DataSyncService", return_value=sync_service), patch(
+            "kronos_mvp.api.KronosPredictor", return_value=predictor
+        ):
             client = TestClient(create_app())
+            _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3")
 
         self.assertEqual(response.status_code, 200)
@@ -147,10 +189,11 @@ class ApiTests(unittest.TestCase):
         predictor = Mock()
         predictor.predict.return_value = _sample_prediction_result()
 
-        with patch("kronos_mvp.api.CandleStore", return_value=store), patch(
-            "kronos_mvp.api.KronosPredictor", return_value=predictor
-        ):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
             client = TestClient(create_app())
+            _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3&auto_sync=false")
 
         self.assertEqual(response.status_code, 200)
@@ -161,30 +204,44 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(analysis["pathCount"], 1)
         self.assertEqual(analysis["upsideProbability"], 1.0)
         self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
+        self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
+        self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
 
-    def test_predict_requires_password_when_access_protected(self):
+    def test_predict_requires_login(self):
         store = FakeStore()
         predictor = Mock()
         predictor.predict.return_value = _sample_prediction_result()
 
-        with patch.dict(os.environ, {"APP_ACCESS_PASSWORD": "secret-pass"}, clear=False), patch(
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
             "kronos_mvp.api.CandleStore", return_value=store
         ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
             client = TestClient(create_app())
 
             status_response = client.get("/auth/status")
             unauthorized = client.get("/api/predict/600519?auto_sync=false")
-            wrong = client.post("/auth/login", json={"password": "wrong"})
-            correct = client.post("/auth/login", json={"password": "secret-pass"})
+            _register(client)
             authorized = client.get("/api/predict/600519?auto_sync=false")
 
         self.assertEqual(status_response.status_code, 200)
         self.assertTrue(status_response.json()["protected"])
         self.assertFalse(status_response.json()["authorized"])
         self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(authorized.status_code, 200)
+
+    def test_legacy_access_password_bootstraps_admin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp, APP_ACCESS_PASSWORD="secret-pass"), clear=False):
+                client = TestClient(create_app())
+
+                wrong = client.post("/auth/login", json={"password": "wrong"})
+                correct = client.post("/auth/login", json={"password": "secret-pass"})
+                users = client.get("/api/admin/users")
+
         self.assertEqual(wrong.status_code, 401)
         self.assertEqual(correct.status_code, 200)
-        self.assertEqual(authorized.status_code, 200)
+        self.assertEqual(correct.json()["user"]["username"], "admin")
+        self.assertTrue(correct.json()["user"]["isAdmin"])
+        self.assertEqual(users.status_code, 200)
 
 
 if __name__ == "__main__":

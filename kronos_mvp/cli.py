@@ -13,6 +13,7 @@ from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .storage import CandleStore, normalize_symbol
 from .sync import DataSyncService
+from .accounts import AccountStore
 
 
 _PROGRESS_VERSION = 1
@@ -57,6 +58,11 @@ def main() -> None:
     merge_parser.add_argument("target")
     merge_parser.add_argument("sources", nargs="+")
 
+    admin_parser = subparsers.add_parser("create-admin", help="create the first admin account")
+    admin_parser.add_argument("--username", default=os.getenv("ADMIN_USERNAME", "admin"))
+    admin_parser.add_argument("--password", default=os.getenv("ADMIN_PASSWORD") or os.getenv("APP_ACCESS_PASSWORD"))
+    admin_parser.add_argument("--app-db", default=os.getenv("APP_DB_PATH"))
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -77,6 +83,8 @@ def main() -> None:
         uvicorn.run("kronos_mvp.api:app", host=args.host, port=args.port, reload=False)
     elif args.command == "merge-db":
         _run_merge_db(args)
+    elif args.command == "create-admin":
+        _run_create_admin(args, args.db)
 
 
 def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -287,6 +295,15 @@ def _run_merge_db(args: argparse.Namespace) -> None:
     )
     if merged_sources == 0:
         raise SystemExit(1)
+
+
+def _run_create_admin(args: argparse.Namespace, kline_db: str) -> None:
+    if not args.password:
+        raise SystemExit("create-admin requires --password or ADMIN_PASSWORD/APP_ACCESS_PASSWORD")
+    app_db = args.app_db or str(Path(kline_db).with_name("app.db"))
+    store = AccountStore(app_db)
+    store.bootstrap_admin(args.username, args.password)
+    print(json.dumps({"ok": True, "username": args.username, "app_db": app_db}, ensure_ascii=False))
 
 
 def _resolve_progress_path(db_path: str | Path, market: str, progress_file: str | None, prefixes: tuple[str, ...]) -> Path:

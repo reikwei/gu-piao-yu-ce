@@ -30,6 +30,10 @@ jobs:
       VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       VPS_DEPLOY_DIR: ${{ secrets.VPS_DATA_DIR }}
+      SAILA_URL: ${{ secrets.SAILA_URL }}
+      SAILA_ID: ${{ secrets.SAILA_ID }}
+      SAILA_KEY: ${{ secrets.SAILA_KEY }}
+      APP_PUBLIC_BASE_URL: ${{ secrets.APP_PUBLIC_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,11 +77,15 @@ jobs:
         uses: appleboy/ssh-action@v1.2.5
         env:
           DEPLOY_DIR: ${{ env.VPS_DEPLOY_DIR }}
+          SAILA_URL: ${{ env.SAILA_URL }}
+          SAILA_ID: ${{ env.SAILA_ID }}
+          SAILA_KEY: ${{ env.SAILA_KEY }}
+          APP_PUBLIC_BASE_URL: ${{ env.APP_PUBLIC_BASE_URL }}
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
-          envs: DEPLOY_DIR
+          envs: DEPLOY_DIR,SAILA_URL,SAILA_ID,SAILA_KEY,APP_PUBLIC_BASE_URL
           script: |
             set -e
             DEPLOY_DIR="${DEPLOY_DIR%/}"
@@ -100,6 +108,31 @@ jobs:
             if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
               "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
             fi
+            python3 - <<'PY'
+            import os
+            from pathlib import Path
+
+            env_path = Path(os.environ["DEPLOY_DIR"]) / ".env"
+            existing = {}
+            if env_path.exists():
+              for line in env_path.read_text(encoding="utf-8").splitlines():
+                if not line or line.startswith("#") or "=" not in line:
+                  continue
+                key, value = line.split("=", 1)
+                existing[key] = value
+            updates = {
+              "SAILA_URL": os.environ.get("SAILA_URL", ""),
+              "SAILA_ID": os.environ.get("SAILA_ID", ""),
+              "SAILA_KEY": os.environ.get("SAILA_KEY", ""),
+              "APP_PUBLIC_BASE_URL": os.environ.get("APP_PUBLIC_BASE_URL", "") or "https://tghao.cc.cd",
+              "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
+              "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
+            }
+            for key, value in updates.items():
+              if value:
+                existing[key] = value
+            env_path.write_text("\n".join(f"{key}={value}" for key, value in existing.items()) + "\n", encoding="utf-8")
+            PY
             systemctl restart yupiaoyuce.service
             systemctl is-active yupiaoyuce.service
 
@@ -108,11 +141,15 @@ jobs:
         uses: appleboy/ssh-action@v1.2.5
         env:
           DEPLOY_DIR: ${{ env.VPS_DEPLOY_DIR }}
+          SAILA_URL: ${{ env.SAILA_URL }}
+          SAILA_ID: ${{ env.SAILA_ID }}
+          SAILA_KEY: ${{ env.SAILA_KEY }}
+          APP_PUBLIC_BASE_URL: ${{ env.APP_PUBLIC_BASE_URL }}
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          envs: DEPLOY_DIR
+          envs: DEPLOY_DIR,SAILA_URL,SAILA_ID,SAILA_KEY,APP_PUBLIC_BASE_URL
           script: |
             set -e
             DEPLOY_DIR="${DEPLOY_DIR%/}"
@@ -135,5 +172,30 @@ jobs:
             if [ -x "$DEPLOY_DIR/.venv/bin/pip" ]; then
               "$DEPLOY_DIR/.venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
             fi
+            python3 - <<'PY'
+            import os
+            from pathlib import Path
+
+            env_path = Path(os.environ["DEPLOY_DIR"]) / ".env"
+            existing = {}
+            if env_path.exists():
+              for line in env_path.read_text(encoding="utf-8").splitlines():
+                if not line or line.startswith("#") or "=" not in line:
+                  continue
+                key, value = line.split("=", 1)
+                existing[key] = value
+            updates = {
+              "SAILA_URL": os.environ.get("SAILA_URL", ""),
+              "SAILA_ID": os.environ.get("SAILA_ID", ""),
+              "SAILA_KEY": os.environ.get("SAILA_KEY", ""),
+              "APP_PUBLIC_BASE_URL": os.environ.get("APP_PUBLIC_BASE_URL", "") or "https://tghao.cc.cd",
+              "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
+              "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
+            }
+            for key, value in updates.items():
+              if value:
+                existing[key] = value
+            env_path.write_text("\n".join(f"{key}={value}" for key, value in existing.items()) + "\n", encoding="utf-8")
+            PY
             systemctl restart yupiaoyuce.service
             systemctl is-active yupiaoyuce.service
