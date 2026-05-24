@@ -103,84 +103,6 @@ python -m unittest discover -s tests -v
 
 注意：默认的 python -m unittest -v 在当前仓库不会自动发现 tests 目录里的测试，使用 discover 命令。
 
-## Cloudflare Pages + 美国 VPS 部署
-
-### 1. 部署静态前端
-
-- Cloudflare Pages 的发布目录指向 [kronos_mvp/static](kronos_mvp/static)
-- 把 [kronos_mvp/static/config.js](kronos_mvp/static/config.js) 里的 apiBaseUrl 改成你的 API 域名，例如 https://api.example.com
-- 这个静态前端不承载模型推理，只负责调用后端 API 和渲染图表
-
-### 2. 部署 API 到 VPS
-
-- 用 Python 3.10+ 创建虚拟环境
-- 安装 requirements.txt，并把 Kronos 源码仓库 clone 到 `vendor/Kronos`
-- 当前生产目录是 `/home/yupiaoyuce`
-- 用 [.env.example](.env.example) 生成生产 .env，并至少设置：
-
-  PYTHONPATH=vendor/Kronos
-  APP_ALLOW_ORIGINS=https://你的-pages-域名
-  APP_SITE_TITLE=土豆A股预测研究
-  KRONOS_DEVICE=cpu
-
-如果需要页面访问密码，可额外设置：
-
-  APP_ACCESS_PASSWORD=你的访问密码
-
-- systemd 模板见 [deploy/systemd/kronos-mvp.service](deploy/systemd/kronos-mvp.service)
-- Nginx 反代模板见 [deploy/nginx/kronos-api.conf](deploy/nginx/kronos-api.conf)
-
-当前生产部署已经验证通过的方式是：
-
-- `tghao.cc.cd` 同域承载前端和 API
-- Nginx 反代到 `127.0.0.1:8000`
-- FastAPI 同时提供 `/` 页面、`/health` 和 `/api/*`
-- Let's Encrypt 证书部署在源站，Cloudflare 橙云继续保留
-
-如果从当前这台 Windows 机器 SSH 到生产 VPS，需要额外走本地临时代理 `127.0.0.1:7895`。
-
-### 3. Cloudflare 入口建议
-
-- 前端域名走 Cloudflare Pages
-- API 域名走 Cloudflare 代理回美国 VPS
-- Pages 域名必须加入 APP_ALLOW_ORIGINS，避免浏览器跨域失败
-
-## GitHub Actions 每日同步
-
-工作流文件是 [.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)。
-
-- 默认在 UTC 08:30 执行，对应北京时间 16:30
-- 默认按全市场 A 股执行同步；如果手动触发时填写 symbols，则只同步传入的股票列表。
-- 只安装同步任务所需依赖，不安装完整推理依赖
-- 第一次跑全市场会最慢；后续每日任务会根据本地 SQLite 已有的最新日期，对每只股票做增量同步。
-- 全市场任务会拆成沪市、深市、北交所三个并行 job，各自维护独立 SQLite 分片和进度文件，最后再合并成单个 `candles.db` 上传到 VPS。
-- 每个分片 job 都会把 SQLite 分片和进度文件保存到 Actions cache；如果某次运行中断或部分失败，下次同分片任务会继续从剩余队列恢复，而不是从头再扫一遍。
-- 工作流启用了并发互斥和更长超时，避免上一次全市场任务还没结束时下一次调度重叠。
-- 可选 Secrets：
-
-  VPS_HOST
-  VPS_USER
-  VPS_PASSWORD
-  VPS_SSH_KEY
-  VPS_DATA_DIR
-  TUSHARE_TOKEN
-
-如果配置了 VPS 相关 Secrets，工作流会把 data/candles.db 上传到 VPS 数据目录。认证方式支持两种：
-
-- 密码登录：填写 VPS_HOST、VPS_USER、VPS_PASSWORD、VPS_DATA_DIR。
-- 密钥登录：填写 VPS_HOST、VPS_USER、VPS_SSH_KEY、VPS_DATA_DIR。
-
-兼容旧配置：如果你以前误把 VPS 登录密码填进了 VPS_SSH_KEY，而不是私钥内容，当前 workflow 也会按密码处理；但后续还是建议把它迁到 VPS_PASSWORD，避免名字继续误导。
-
-## Git 推送后自动部署
-
-应用代码自动部署工作流是 [.github/workflows/deploy-app-to-vps.yml](.github/workflows/deploy-app-to-vps.yml)。
-
-- `push_git.bat` 只是负责提交并推送到 GitHub。
-- 当代码推送到 `main` 后，`deploy-app-to-vps.yml` 会单独触发，把最新代码打包并同步到 `/home/yupiaoyuce`。
-- 这个自动部署不会覆盖 `.env`、`.venv`、`data` 和 `vendor`，因此不会影响现有同步数据任务写入 SQLite。
-- 自动部署完成后只会重启线上 API 服务 `yupiaoyuce.service`，不会触发全市场数据同步。
-
 ### Git 上传规则
 
 - 要上传到 GitHub：源码、[.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)、README、部署模板。
@@ -189,7 +111,7 @@ python -m unittest discover -s tests -v
 
 ### Secrets 怎么填
 
-- VPS_HOST：你的服务器地址。当前就是 172.245.147.13。
+- VPS_HOST：你的服务器地址。
 - VPS_USER：SSH 用户。你现在填 root 就对。
 - VPS_PASSWORD：如果服务器是 root + 密码登录，就把登录密码放这里，放在 GitHub Secrets，不进仓库。
 - VPS_SSH_KEY：如果服务器是密钥登录，才填写这里；内容是私钥原文，放在 GitHub Secrets，不进仓库。
