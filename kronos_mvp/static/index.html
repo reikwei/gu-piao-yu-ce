@@ -817,8 +817,12 @@
 
       const fontSize = Math.max(28, Math.round(canvas.width / 34));
       const rotation = -Math.PI / 6;
-      const stepX = fontSize * 6.2;
-      const stepY = fontSize * 3.4;
+      const diagonal = Math.hypot(canvas.width, canvas.height);
+      const isTallPage = canvas.height >= canvas.width;
+      const columnCount = isTallPage ? 2 : 3;
+      const rowCount = isTallPage ? 3 : 2;
+      const rangeX = diagonal * 0.42;
+      const rangeY = diagonal * 0.34;
 
       context.save();
       context.translate(canvas.width / 2, canvas.height / 2);
@@ -828,11 +832,11 @@
       context.textAlign = 'center';
       context.textBaseline = 'middle';
 
-      for (let y = -canvas.height; y <= canvas.height; y += stepY) {
-        const rowIndex = Math.round((y + canvas.height) / stepY);
-        const offsetX = rowIndex % 2 === 0 ? 0 : stepX / 2;
-        for (let x = -canvas.width; x <= canvas.width; x += stepX) {
-          context.fillText(text, x + offsetX, y);
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        const y = rowCount === 1 ? 0 : -rangeY + (2 * rangeY * rowIndex) / (rowCount - 1);
+        for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+          const x = columnCount === 1 ? 0 : -rangeX + (2 * rangeX * columnIndex) / (columnCount - 1);
+          context.fillText(text, x, y);
         }
       }
 
