@@ -594,7 +594,7 @@
       <section class='view centered' id='auth-view'>
         <div class='card entry-card'>
           <h1>登录账户</h1>
-          <p>注册后可获得 10 次免费预测机会；余额查询按 0.20 元 / 次扣费，20 元可转换包年。</p>
+          <p>注册后可获得 10 次免费预测机会。</p>
           <div class='entry-note'>用户登录后进入预测首页</div>
           <div class='input-stack'>
             <label>用户名
@@ -605,7 +605,7 @@
             </label>
             <div class='button-row'>
               <button class='primary-button' id='login-button' type='button'>登录</button>
-              <button class='secondary-button' id='register-button' type='button'>注册并领取 10 次</button>
+              <button class='secondary-button' id='register-button' type='button'>注册账号</button>
             </div>
           </div>
           <div class='status-text' id='auth-status'>请输入用户名和密码。</div>
@@ -631,12 +631,17 @@
                 <option value='usdt'>USDT</option>
               </select>
               <button class='secondary-button' id='recharge-button' type='button'>充值余额</button>
-              <button class='secondary-button' id='annual-button' type='button'>20 元包年</button>
+              <button class='secondary-button' id='annual-button' type='button'>充值包年</button>
             </div>
             <div class='button-row'>
               <button class='secondary-button' id='convert-annual-button' type='button'>余额转包年</button>
               <button class='secondary-button' id='admin-button' type='button' hidden>管理后台</button>
               <button class='secondary-button' id='logout-button' type='button'>退出登录</button>
+            </div>
+            <div class='payment-row'>
+              <input id='current-password' type='password' autocomplete='current-password' placeholder='当前密码'>
+              <input id='new-password' type='password' autocomplete='new-password' placeholder='新密码，至少 6 位'>
+              <button class='secondary-button' id='change-password-button' type='button'>修改密码</button>
             </div>
           </div>
           <div class='input-stack'>
@@ -675,6 +680,7 @@
                   <th>包年</th>
                   <th>调次数</th>
                   <th>调余额</th>
+                  <th>重置密码</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -835,6 +841,7 @@
     document.getElementById('recharge-button').addEventListener('click', () => createPaymentOrder('balance'));
     document.getElementById('annual-button').addEventListener('click', () => createPaymentOrder('annual'));
     document.getElementById('convert-annual-button').addEventListener('click', convertAnnual);
+    document.getElementById('change-password-button').addEventListener('click', changePassword);
     document.getElementById('admin-button').addEventListener('click', openAdminView);
     document.getElementById('admin-refresh-button').addEventListener('click', loadAdminUsers);
     document.getElementById('admin-back-button').addEventListener('click', () => showView('home'));
@@ -917,7 +924,7 @@
       if (!currentUser) {
         return;
       }
-      document.getElementById('account-note').textContent = `${currentUser.username}，每次普通查询扣 0.20 元，包年或管理员账号不扣费。`;
+      document.getElementById('account-note').textContent = `${currentUser.username}，每次普通查询扣 0.20 元，包年账号不扣0.2费用。`;
       document.getElementById('free-credits-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.freeCreditsRemaining} 次`;
       document.getElementById('balance-value').textContent = currentUser.isAdmin ? '不限' : `${currentUser.balanceYuan} 元`;
       document.getElementById('annual-value').textContent = currentUser.isAdmin ? '管理员' : formatAnnualState(currentUser);
@@ -940,7 +947,7 @@
     async function createPaymentOrder(orderType) {
       const amount = orderType === 'annual' ? '20' : document.getElementById('recharge-amount').value.trim();
       const payType = document.getElementById('pay-type').value;
-      homeStatusEl.textContent = orderType === 'annual' ? '正在创建 20 元包年订单...' : '正在创建充值订单...';
+      homeStatusEl.textContent = orderType === 'annual' ? '正在创建包年订单...' : '正在创建充值订单...';
       try {
         const payload = await fetchJson(buildApiUrl('/api/payments/orders'), {
           method: 'POST',
@@ -979,6 +986,30 @@
       }
     }
 
+    async function changePassword() {
+      const currentPassword = document.getElementById('current-password').value;
+      const newPassword = document.getElementById('new-password').value;
+      if (!currentPassword || !newPassword) {
+        homeStatusEl.textContent = '请填写当前密码和新密码。';
+        return;
+      }
+      homeStatusEl.textContent = '正在修改密码...';
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/me/change-password'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        currentUser = payload.user;
+        renderAccountState();
+        document.getElementById('current-password').value = '';
+        document.getElementById('new-password').value = '';
+        homeStatusEl.textContent = '密码已修改，下次登录请使用新密码。';
+      } catch (error) {
+        homeStatusEl.textContent = error.message || '修改密码失败';
+      }
+    }
+
     async function openAdminView() {
       showView('admin');
       await loadAdminUsers();
@@ -1007,6 +1038,7 @@
           <td>${formatAnnualState(user)}</td>
           <td><input data-admin-credit value='1'><button class='small-button' data-action='credits'>调整</button></td>
           <td><input data-admin-balance value='1'><button class='small-button' data-action='balance'>调整</button></td>
+          <td><input data-admin-password type='password' placeholder='新密码'><button class='small-button' data-action='resetPassword'>重置</button></td>
           <td>
             <button class='small-button' data-action='${user.isBanned ? 'unban' : 'ban'}'>${user.isBanned ? '解封' : '封禁'}</button>
             <button class='small-button' data-action='annual'>包年</button>
@@ -1038,6 +1070,14 @@
       } else if (action === 'clearAnnual') {
         url = `/api/admin/users/${userId}/set-annual`;
         body = { days: null };
+      } else if (action === 'resetPassword') {
+        const newPassword = row.querySelector('[data-admin-password]').value;
+        if (!newPassword) {
+          adminStatusEl.textContent = '请先填写新密码。';
+          return;
+        }
+        url = `/api/admin/users/${userId}/reset-password`;
+        body = { newPassword };
       }
       adminStatusEl.textContent = '正在提交后台操作...';
       try {

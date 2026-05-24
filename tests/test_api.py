@@ -78,9 +78,11 @@ class ApiTests(unittest.TestCase):
         self.assertIn("./config.js", response.text)
         self.assertIn("土豆A股预测研究", response.text)
         self.assertIn("登录账户", response.text)
-        self.assertIn("注册并领取 10 次", response.text)
+        self.assertIn("注册账号", response.text)
         self.assertIn("充值余额", response.text)
+        self.assertIn("修改密码", response.text)
         self.assertIn("后台用户管理", response.text)
+        self.assertIn("重置密码", response.text)
         self.assertIn("返回首页", response.text)
         self.assertIn("点击保存预测截图", response.text)
         self.assertIn("未来 7 个交易日", response.text)
@@ -136,6 +138,54 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(user["balanceCents"], 0)
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["user"]["username"], "alice")
+
+    def test_user_can_change_password(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp), clear=False):
+                client = TestClient(create_app())
+                _register(client, username="alice", password="oldpass123")
+
+                wrong_current = client.post(
+                    "/api/me/change-password",
+                    json={"currentPassword": "wrongpass", "newPassword": "newpass123"},
+                )
+                changed = client.post(
+                    "/api/me/change-password",
+                    json={"currentPassword": "oldpass123", "newPassword": "newpass123"},
+                )
+                client.post("/api/auth/logout")
+                old_login = client.post("/api/auth/login", json={"username": "alice", "password": "oldpass123"})
+                new_login = client.post("/api/auth/login", json={"username": "alice", "password": "newpass123"})
+
+        self.assertEqual(wrong_current.status_code, 401)
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(old_login.status_code, 401)
+        self.assertEqual(new_login.status_code, 200)
+
+    def test_admin_can_reset_user_password(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _test_env(tmp, APP_ACCESS_PASSWORD="secret-pass"), clear=False):
+                app = create_app()
+                user_client = TestClient(app)
+                admin_client = TestClient(app)
+                user = _register(user_client, username="bob", password="oldpass123")
+                me_before_reset = user_client.get("/api/me")
+
+                admin_login = admin_client.post("/auth/login", json={"password": "secret-pass"})
+                reset = admin_client.post(
+                    f"/api/admin/users/{user['id']}/reset-password",
+                    json={"newPassword": "newpass123"},
+                )
+                me_after_reset = user_client.get("/api/me")
+                old_login = user_client.post("/api/auth/login", json={"username": "bob", "password": "oldpass123"})
+                new_login = user_client.post("/api/auth/login", json={"username": "bob", "password": "newpass123"})
+
+        self.assertEqual(me_before_reset.status_code, 200)
+        self.assertEqual(admin_login.status_code, 200)
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(me_after_reset.status_code, 401)
+        self.assertEqual(old_login.status_code, 401)
+        self.assertEqual(new_login.status_code, 200)
 
     def test_predict_auto_syncs_before_prediction_when_cache_is_missing(self):
         store = FakeStore(empty_first=True)

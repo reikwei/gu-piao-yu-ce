@@ -65,6 +65,15 @@ class AdminAnnualRequest(BaseModel):
     days: int | None = 365
 
 
+class PasswordChangeRequest(BaseModel):
+    currentPassword: str
+    newPassword: str
+
+
+class AdminPasswordResetRequest(BaseModel):
+    newPassword: str
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=os.getenv("APP_SITE_TITLE", "土豆A股预测研究"), version="0.1.0")
     _configure_cors(app)
@@ -136,6 +145,15 @@ def create_app() -> FastAPI:
     def me(request: Request) -> dict[str, object]:
         user = _require_current_user(request, account_store)
         return {"user": public_user(user)}
+
+    @app.post("/api/me/change-password")
+    def change_password(payload: PasswordChangeRequest, request: Request) -> dict[str, object]:
+        user = _require_current_user(request, account_store)
+        try:
+            updated = account_store.change_password(int(user["id"]), payload.currentPassword, payload.newPassword)
+            return {"user": public_user(updated)}
+        except AccountError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -302,6 +320,15 @@ def create_app() -> FastAPI:
         operator = _require_admin(request, account_store)
         try:
             updated = account_store.admin_set_annual_days(int(operator["id"]), user_id, payload.days)
+            return {"user": public_user(updated)}
+        except AccountError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    @app.post("/api/admin/users/{user_id}/reset-password")
+    def admin_reset_password(user_id: int, payload: AdminPasswordResetRequest, request: Request) -> dict[str, object]:
+        operator = _require_admin(request, account_store)
+        try:
+            updated = account_store.admin_reset_password(int(operator["id"]), user_id, payload.newPassword)
             return {"user": public_user(updated)}
         except AccountError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

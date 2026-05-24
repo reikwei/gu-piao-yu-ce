@@ -294,6 +294,21 @@ class AccountStore:
             ).fetchall()
         return [dict_from_row(row) for row in rows]
 
+    def change_password(self, user_id: int, current_password: str, new_password: str) -> sqlite3.Row:
+        validate_password(new_password)
+        now = utc_now_text()
+        with self._transaction() as conn:
+            user = self._get_user_by_id(conn, user_id)
+            if int(user["is_banned"]):
+                raise AccountError("账号已被封禁，不能修改密码。", status_code=403)
+            if not verify_password(current_password, user["password_hash"]):
+                raise AccountError("当前密码不正确。", status_code=401)
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (hash_password(new_password), now, user_id),
+            )
+            return self._get_user_by_id(conn, user_id)
+
     def authorize_prediction(self, user_id: int, symbol: str) -> dict[str, object]:
         normalized_symbol = symbol.strip().lower()
         now = utc_now_text()
@@ -583,6 +598,27 @@ class AccountStore:
             conn.execute("UPDATE users SET annual_until = ?, updated_at = ? WHERE id = ?", (annual_until, to_text(now_dt), user_id))
             after = self._get_user_by_id(conn, user_id)
             self._write_audit(conn, operator_id, user_id, "set_annual", dict_from_row(before), dict_from_row(after))
+            return after
+
+    def admin_reset_password(self, operator_id: int, user_id: int, new_password: str) -> sqlite3.Row:
+        validate_password(new_password)
+        now = utc_now_text()
+        with self._transaction() as conn:
+            operator = self._get_user_by_id(conn, operator_id)
+            require_admin_row(operator)
+            before = self._get_user_by_id(conn, user_id)
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (hash_password(new_password), now, user_id),
+            )
+            conn.execute(
+                "UPDATE user_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                (now, user_id),
+            )
+            after = self._get_user_by_id(conn, user_id)
+            before_public = public_user(before)
+            after_public = public_user(after)
+            self._write_audit(conn, operator_id, user_id, "reset_password", before_public, after_public)
             return after
 
     def _get_user_by_id(self, conn: sqlite3.Connection, user_id: int) -> sqlite3.Row:
