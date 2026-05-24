@@ -444,6 +444,71 @@
       margin-top: 18px;
     }
 
+    .home-interaction-shell {
+      position: relative;
+      display: grid;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .home-interaction-shell .home-account-actions,
+    .home-interaction-shell .input-stack {
+      margin-top: 0;
+    }
+
+    .home-predict-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      border-radius: 26px;
+      background: rgba(248, 250, 252, 0.92);
+      backdrop-filter: blur(10px);
+    }
+
+    .home-predict-overlay-card {
+      width: min(100%, 520px);
+      display: grid;
+      gap: 8px;
+      padding: 22px 24px;
+      border: 1px solid rgba(23, 50, 77, 0.1);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 244, 230, 0.96));
+      box-shadow: 0 18px 42px rgba(17, 24, 39, 0.12);
+      text-align: center;
+    }
+
+    .home-predict-overlay-emoji {
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .home-predict-overlay-title {
+      color: var(--navy);
+      font: 700 22px 'Space Grotesk', 'Noto Sans SC', sans-serif;
+      letter-spacing: -0.03em;
+    }
+
+    .home-predict-overlay-body,
+    .home-predict-overlay-hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+
+    .home-predict-overlay.is-error .home-predict-overlay-card {
+      border-color: rgba(191, 47, 47, 0.14);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 245, 244, 0.96));
+    }
+
+    .home-predict-overlay.is-error .home-predict-overlay-title {
+      color: #8c1d1d;
+    }
+
     .account-center-panel {
       width: min(1160px, 100%);
       padding: 0;
@@ -734,6 +799,14 @@
       align-items: start;
     }
 
+    .detail-inline-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
     .fund-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -971,20 +1044,7 @@
         <a class='detail-topbar-brand-link' href='https://jdn.cc.cd' rel='noopener noreferrer' target='_blank'>https://jdn.cc.cd</a>
       </div>
       <div class='topbar-actions' data-screenshot-exclude='true'>
-        <button class='detail-action-button' id='fund-analysis-button' type='button'>资金面分析</button>
         <button class='capture-button' id='capture-detail' type='button'>点击保存预测截图</button>
-      </div>
-    </header>
-
-    <header class='topbar' id='fund-topbar' hidden>
-      <button class='back-button' id='back-detail' type='button'>返回预测详情</button>
-      <div class='topbar-copy'>
-        <h1 id='fund-title'>股票资金面分析</h1>
-        <p id='fund-status'>展示最近半个月资金净额、连续流向、融资趋势和综合结论。</p>
-      </div>
-      <div class='topbar-actions'>
-        <button class='detail-action-button' id='reload-fund-analysis' type='button'>重新加载资金面数据</button>
-        <button class='detail-action-button' id='back-home-from-fund' type='button'>返回首页</button>
       </div>
     </header>
 
@@ -1048,17 +1108,27 @@
           <h1 id='site-title'>土豆A股预测研究</h1>
           <p id='subtitle'>输入股票代码，生成未来 7 个交易日的上涨概率、波动风险和代表情景。</p>
           <div class='entry-note' id='account-note'>内部采样 12 条路径，仅输出研究结论，不展示全部原始路径。</div>
-          <div class='button-row home-account-actions'>
-            <button class='secondary-button' id='account-center-button' type='button'>进入账户中心</button>
-            <button class='secondary-button' id='admin-button' type='button' hidden>管理后台</button>
+          <div class='home-interaction-shell'>
+            <div class='button-row home-account-actions'>
+              <button class='secondary-button' id='account-center-button' type='button'>进入账户中心</button>
+              <button class='secondary-button' id='admin-button' type='button' hidden>管理后台</button>
+            </div>
+            <div class='input-stack'>
+              <label>股票代码
+                <input id='symbol-input' value='600519' inputmode='numeric' autocomplete='off' placeholder='例如 600519'>
+              </label>
+              <button class='primary-button' id='predict-button' type='button'>开始预测</button>
+            </div>
+            <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
+            <div class='home-predict-overlay' id='home-predict-overlay' hidden>
+              <div class='home-predict-overlay-card'>
+                <div class='home-predict-overlay-emoji' id='home-predict-overlay-emoji'>⏳</div>
+                <div class='home-predict-overlay-title' id='home-predict-overlay-title'>正在生成预测分析</div>
+                <p class='home-predict-overlay-body' id='home-predict-overlay-body'>正在为 600519 生成未来 7 个交易日的预测分析</p>
+                <p class='home-predict-overlay-hint' id='home-predict-overlay-hint'>请稍后...</p>
+              </div>
+            </div>
           </div>
-          <div class='input-stack'>
-            <label>股票代码
-              <input id='symbol-input' value='600519' inputmode='numeric' autocomplete='off' placeholder='例如 600519'>
-            </label>
-            <button class='primary-button' id='predict-button' type='button'>开始预测</button>
-          </div>
-          <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
         </div>
       </section>
 
@@ -1263,18 +1333,20 @@
           </div>
           <div id='chart'></div>
         </section>
-      </section>
 
-      <section class='view detail-stack' id='fund-view' hidden>
         <section class='detail-grid fund-grid'>
           <article class='card detail-card'>
             <div class='detail-headline'>
               <div>
-                <h2>资金面分析</h2>
-                <p id='fund-analysis-summary'>进入资金面分析页后，这里会展示最近半个月的主力资金累计流向、融资趋势和评分结果。</p>
+                <h2 id='fund-title'>资金面分析</h2>
+                <p id='fund-status'>预测完成后会在这里自动展示最近半个月的主力资金流向、融资趋势和综合结论。</p>
               </div>
-              <div class='fund-score-badge neutral' id='fund-score-badge'>等待加载</div>
+              <div class='detail-inline-actions' data-screenshot-exclude='true'>
+                <button class='detail-action-button' id='reload-fund-analysis' type='button'>重新加载资金面数据</button>
+                <div class='fund-score-badge neutral' id='fund-score-badge'>等待加载</div>
+              </div>
             </div>
+            <p id='fund-analysis-summary'>预测完成后，这里会展示最近半个月的主力资金累计流向、融资趋势和评分结果。</p>
             <div class='meta-grid factor-grid'>
               <div class='meta-item'>
                 <span>资金净额</span>
@@ -1388,10 +1460,8 @@
       account: document.getElementById('account-center-view'),
       admin: document.getElementById('admin-view'),
       detail: document.getElementById('detail-view'),
-      fund: document.getElementById('fund-view'),
     };
     const detailTopbar = document.getElementById('detail-topbar');
-    const fundTopbar = document.getElementById('fund-topbar');
     const loginButton = document.getElementById('login-button');
     const registerButton = document.getElementById('register-button');
     const registerModal = document.getElementById('register-modal');
@@ -1400,8 +1470,10 @@
     const floatingMessage = document.getElementById('floating-message');
     const floatingMessageText = document.getElementById('floating-message-text');
     const floatingMessageClose = document.getElementById('floating-message-close');
+    const accountCenterButton = document.getElementById('account-center-button');
+    const adminButton = document.getElementById('admin-button');
     const predictButton = document.getElementById('predict-button');
-    const fundAnalysisButton = document.getElementById('fund-analysis-button');
+    const symbolInput = document.getElementById('symbol-input');
     const captureButton = document.getElementById('capture-detail');
     const reloadFundButton = document.getElementById('reload-fund-analysis');
     const fundTitleEl = document.getElementById('fund-title');
@@ -1409,11 +1481,18 @@
     const authStatusEl = document.getElementById('auth-status');
     const registerStatusEl = document.getElementById('register-status');
     const homeStatusEl = document.getElementById('home-status');
+    const homePredictOverlay = document.getElementById('home-predict-overlay');
+    const homePredictOverlayEmoji = document.getElementById('home-predict-overlay-emoji');
+    const homePredictOverlayTitle = document.getElementById('home-predict-overlay-title');
+    const homePredictOverlayBody = document.getElementById('home-predict-overlay-body');
+    const homePredictOverlayHint = document.getElementById('home-predict-overlay-hint');
     const accountStatusEl = document.getElementById('account-center-status');
     const adminStatusEl = document.getElementById('admin-status');
     const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+    const PREDICT_TIMEOUT_MS = 90000;
+    const PREDICT_FAILURE_STORAGE_KEY = 'kronos_predict_failure_count';
     const SCREENSHOT_WATERMARK_TEXT = 'wx：7354280';
     let html2CanvasLoader = null;
     let currentUser = null;
@@ -1429,15 +1508,7 @@
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
     });
-    document.getElementById('back-detail').addEventListener('click', () => {
-      showView('detail');
-    });
-    document.getElementById('back-home-from-fund').addEventListener('click', () => {
-      showView('home');
-      homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
-    });
-    fundAnalysisButton.addEventListener('click', openFundAnalysisView);
-    reloadFundButton.addEventListener('click', () => loadFundAnalysis(false));
+    reloadFundButton.addEventListener('click', () => loadFundAnalysis({ autoSync: true, scrollIntoView: true }));
     captureButton.addEventListener('click', savePredictionScreenshot);
 
     document.getElementById('auth-password').addEventListener('keydown', event => {
@@ -1454,7 +1525,7 @@
       }
     });
 
-    document.getElementById('symbol-input').addEventListener('keydown', event => {
+    symbolInput.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
         predictButton.click();
@@ -1466,8 +1537,8 @@
     registerSubmitButton.addEventListener('click', registerAccount);
     registerCancelButton.addEventListener('click', closeRegisterDialog);
     floatingMessageClose.addEventListener('click', hideFloatingMessage);
-    predictButton.addEventListener('click', () => requestPrediction(document.getElementById('symbol-input').value.trim()));
-    document.getElementById('account-center-button').addEventListener('click', openAccountCenter);
+    predictButton.addEventListener('click', () => requestPrediction(symbolInput.value.trim()));
+    accountCenterButton.addEventListener('click', openAccountCenter);
     document.getElementById('account-center-back').addEventListener('click', () => {
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入股票代码即可继续预测。';
@@ -1477,7 +1548,7 @@
     document.getElementById('annual-button').addEventListener('click', () => createPaymentOrder('annual'));
     document.getElementById('convert-annual-button').addEventListener('click', convertAnnual);
     document.getElementById('change-password-button').addEventListener('click', changePassword);
-    document.getElementById('admin-button').addEventListener('click', openAdminView);
+    adminButton.addEventListener('click', openAdminView);
     document.getElementById('account-admin-button').addEventListener('click', openAdminView);
     document.getElementById('admin-refresh-button').addEventListener('click', loadAdminUsers);
     document.getElementById('admin-back-button').addEventListener('click', () => showView('home'));
@@ -1620,6 +1691,8 @@
       currentPredictionData = null;
       currentPredictionAnalysis = null;
       currentFundAnalysis = null;
+      resetPredictFailureState();
+      hideHomePredictOverlay();
       showView('auth');
       authStatusEl.textContent = '已退出登录。';
     }
@@ -1857,9 +1930,13 @@
         return;
       }
 
-      setDetailBusy(true, `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的概率分析...`);
+      homeStatusEl.textContent = `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的预测分析...`;
+      showHomePredictOverlay(buildPredictOverlayState(symbol));
+      setDetailBusy(true);
       try {
-        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`));
+        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`), {
+          timeoutMs: PREDICT_TIMEOUT_MS,
+        });
         if (data.billing && data.billing.me) {
           currentUser = data.billing.me;
           renderAccountState();
@@ -1869,14 +1946,23 @@
         currentPredictionData = data;
         currentPredictionAnalysis = analysis;
         currentFundAnalysis = null;
+        resetPredictFailureState();
+        hideHomePredictOverlay();
         showView('detail');
         renderDetail(data, analysis, envelope);
+        renderFundAnalysisPlaceholder(data.symbol);
+        renderCombinedConclusion(analysis, null);
+        void loadFundAnalysis({ autoSync: true });
       } catch (error) {
         if (error && error.authRequired) {
+          resetPredictFailureState();
+          hideHomePredictOverlay();
           authStatusEl.textContent = '请先登录账户。';
           showView('auth');
         } else {
-          homeStatusEl.textContent = error.message || '预测失败';
+          const failureState = buildPredictFailureOverlayState();
+          homeStatusEl.textContent = failureState.status;
+          showHomePredictOverlay(failureState);
           showView('home');
         }
       } finally {
@@ -1887,8 +1973,6 @@
     function renderDetail(data, analysis, envelope) {
       document.getElementById('detail-title').textContent = `${data.symbol} 概率预测详情`;
       detailStatusEl.textContent = buildPredictionStatus(data, analysis);
-      fundAnalysisButton.disabled = false;
-      fundAnalysisButton.textContent = '资金面分析';
 
       renderSignal(analysis);
       document.getElementById('upside-value').textContent = formatPercent(analysis.upsideProbability);
@@ -1906,38 +1990,25 @@
       renderChart(data, analysis, envelope);
     }
 
-    async function openFundAnalysisView() {
-      if (!currentPredictionData || !currentPredictionAnalysis) {
-        return;
-      }
-
-      renderFundViewHeader(currentPredictionData.symbol, currentPredictionAnalysis);
-      if (currentFundAnalysis) {
-        renderFundAnalysis(currentFundAnalysis);
-        renderCombinedConclusion(currentPredictionAnalysis, currentFundAnalysis);
-      } else {
-        renderFundAnalysisPlaceholder(currentPredictionData.symbol);
-        renderCombinedConclusion(currentPredictionAnalysis, null);
-      }
-
-      showView('fund');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      await loadFundAnalysis(false);
-    }
-
-    async function loadFundAnalysis(scrollIntoView) {
+    async function loadFundAnalysis(options = {}) {
       if (!currentPredictionData) {
         return;
       }
+      const { scrollIntoView = false, autoSync = false } = options;
+      const symbol = currentPredictionData.symbol;
       const reloadLabel = reloadFundButton.textContent;
-      fundAnalysisButton.disabled = true;
-      fundAnalysisButton.textContent = '加载中...';
       reloadFundButton.disabled = true;
       reloadFundButton.textContent = '重新加载中...';
-      document.getElementById('fund-analysis-status').textContent = `正在加载 ${currentPredictionData.symbol} 的资金面分析...`;
-      renderFundViewHeader(currentPredictionData.symbol, currentPredictionAnalysis);
+      document.getElementById('fund-analysis-status').textContent = autoSync
+        ? `正在同步并加载 ${symbol} 的资金面分析...`
+        : `正在加载 ${symbol} 的资金面分析...`;
+      renderFundViewHeader(symbol, currentPredictionAnalysis);
       try {
-        const payload = await fetchJson(buildApiUrl(`/api/funds/${currentPredictionData.symbol}`));
+        const suffix = autoSync ? '?auto_sync=true' : '';
+        const payload = await fetchJson(buildApiUrl(`/api/funds/${symbol}${suffix}`));
+        if (!currentPredictionData || currentPredictionData.symbol !== symbol) {
+          return;
+        }
         currentFundAnalysis = payload.analysis || null;
         if (!currentFundAnalysis) {
           throw new Error('资金面分析结果为空。');
@@ -1956,8 +2027,6 @@
           showView('auth');
         }
       } finally {
-        fundAnalysisButton.disabled = false;
-        fundAnalysisButton.textContent = '资金面分析';
         reloadFundButton.disabled = false;
         reloadFundButton.textContent = reloadLabel;
       }
@@ -1965,7 +2034,7 @@
 
     function renderFundAnalysisPlaceholder(symbol) {
       renderFundViewHeader(symbol, currentPredictionAnalysis);
-      document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析尚未加载。进入资金面分析页后，会展示最近半个月的主力资金累计流向、融资趋势与评分。`;
+      document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析正在准备中。预测完成后，会在这里自动展示最近半个月的主力资金累计流向、融资趋势与评分。`;
       setFundScoreBadge('neutral', '等待加载');
       document.getElementById('fund-net-inflow-value').textContent = '--';
       document.getElementById('fund-net-ratio-value').textContent = '--';
@@ -1981,8 +2050,8 @@
       document.getElementById('fund-margin-acceleration-3d-value').textContent = '--';
       document.getElementById('fund-trend-profile-value').textContent = '--';
       setFundMarginNote('');
-      document.getElementById('fund-analysis-status').textContent = '等待加载资金面数据。';
-      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>进入资金面分析页后，会在这里展示多日资金因子的评分和解释。</p></div>`;
+      document.getElementById('fund-analysis-status').textContent = '等待自动加载资金面数据。';
+      document.getElementById('fund-component-list').innerHTML = `<div class='scenario-row neutral'><header><span class='scenario-title'>等待加载</span><span class='scenario-value'>--</span></header><p>预测完成后，会在这里展示多日资金因子的评分和解释。</p></div>`;
     }
 
     function renderFundAnalysis(analysis) {
@@ -2066,7 +2135,7 @@
 
     function renderFundViewHeader(symbol, kronosAnalysis, fundAnalysis = null, errorMessage = '') {
       const safeSymbol = symbol || '--';
-      fundTitleEl.textContent = `${safeSymbol} 资金面分析详情`;
+      fundTitleEl.textContent = `${safeSymbol} 资金面分析`;
       if (fundAnalysis) {
         fundStatusEl.textContent = `${safeSymbol} / Kronos ${kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--'} / 截至 ${fundAnalysis.tradeDate || '--'} / 已累计 ${fundAnalysis.historyDays || 1} 个交易日样本`;
         return;
@@ -2298,7 +2367,6 @@
         element.hidden = key !== name;
       });
       detailTopbar.hidden = name !== 'detail';
-      fundTopbar.hidden = name !== 'fund';
       if (name === 'detail') {
         requestAnimationFrame(() => chart.resize());
       }
@@ -2313,25 +2381,48 @@
     }
 
     async function fetchJson(url, options = {}) {
-      const response = await fetch(url, { credentials: 'include', ...options });
-      const text = await response.text();
-      let payload = {};
-      if (text) {
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          payload = {};
+      const { timeoutMs = 0, ...fetchOptions } = options;
+      const controller = timeoutMs > 0 ? new AbortController() : null;
+      const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+
+      try {
+        const response = await fetch(url, {
+          credentials: 'include',
+          ...fetchOptions,
+          signal: controller ? controller.signal : fetchOptions.signal,
+        });
+        const text = await response.text();
+        let payload = {};
+        if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            payload = {};
+          }
+        }
+        if (response.status === 401) {
+          const error = new Error(payload.detail || '请先登录。');
+          error.authRequired = true;
+          throw error;
+        }
+        if (!response.ok) {
+          throw new Error(payload.detail || '请求失败');
+        }
+        return payload;
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          const timeoutError = new Error('预测请求超时');
+          timeoutError.isTimeout = true;
+          throw timeoutError;
+        }
+        throw error;
+      } finally {
+        if (timeoutId != null) {
+          window.clearTimeout(timeoutId);
         }
       }
-      if (response.status === 401) {
-        const error = new Error(payload.detail || '请先登录。');
-        error.authRequired = true;
-        throw error;
-      }
-      if (!response.ok) {
-        throw new Error(payload.detail || '请求失败');
-      }
-      return payload;
     }
 
     function renderSignal(analysis) {
@@ -2798,15 +2889,90 @@
       }
     }
 
-    function setDetailBusy(busy, message) {
+    function setDetailBusy(busy) {
       predictButton.disabled = busy;
-      if (message) {
-        homeStatusEl.textContent = message;
-      }
+      symbolInput.disabled = busy;
+      accountCenterButton.disabled = busy;
+      adminButton.disabled = busy;
       if (busy) {
         chart.showLoading('default', { text: 'Kronos 正在生成未来一周概率分析...', color: '#17324d', textColor: '#556579', maskColor: 'rgba(255,255,255,0.42)' });
       } else {
         chart.hideLoading();
+      }
+    }
+
+    function showHomePredictOverlay(state) {
+      homePredictOverlay.classList.toggle('is-error', state.tone === 'error');
+      homePredictOverlayEmoji.textContent = state.emoji;
+      homePredictOverlayTitle.textContent = state.title;
+      homePredictOverlayBody.textContent = state.body;
+      homePredictOverlayHint.textContent = state.hint || '';
+      homePredictOverlayHint.hidden = !state.hint;
+      homePredictOverlay.hidden = false;
+    }
+
+    function hideHomePredictOverlay() {
+      homePredictOverlay.hidden = true;
+      homePredictOverlay.classList.remove('is-error');
+    }
+
+    function buildPredictOverlayState(symbol) {
+      return {
+        tone: 'loading',
+        emoji: '⏳',
+        title: '正在生成预测分析',
+        body: `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的预测分析`,
+        hint: '请稍后...',
+        status: `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的预测分析...`,
+      };
+    }
+
+    function buildPredictFailureOverlayState() {
+      const failureCount = recordPredictFailure();
+      if (failureCount >= 2) {
+        return {
+          tone: 'error',
+          emoji: '⚠️',
+          title: '系统错误',
+          body: '请联系管理 WX 7354280',
+          hint: '',
+          status: '系统错误，请联系管理WX 7354280。',
+        };
+      }
+      return {
+        tone: 'error',
+        emoji: '⌛',
+        title: '预测超时……',
+        body: '请刷新页面重试。',
+        hint: '',
+        status: '预测超时……请刷新页面重试。',
+      };
+    }
+
+    function getPredictFailureCount() {
+      try {
+        const raw = window.sessionStorage.getItem(PREDICT_FAILURE_STORAGE_KEY);
+        return Math.max(0, Number(raw || 0));
+      } catch {
+        return 0;
+      }
+    }
+
+    function recordPredictFailure() {
+      const next = getPredictFailureCount() + 1;
+      try {
+        window.sessionStorage.setItem(PREDICT_FAILURE_STORAGE_KEY, String(next));
+      } catch {
+        return next;
+      }
+      return next;
+    }
+
+    function resetPredictFailureState() {
+      try {
+        window.sessionStorage.removeItem(PREDICT_FAILURE_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures.
       }
     }
 

@@ -70,6 +70,11 @@ class FakeFundStore:
     def get_latest(self, symbol: str, limit: int = 15) -> list[FundFactor]:
         return [factor for factor in self.factors if factor.symbol == symbol][-limit:]
 
+    def get_latest_trade_date(self):
+        if not self.factors:
+            return None
+        return max(factor.trade_date for factor in self.factors)
+
 
 def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
     path = Path(tmp)
@@ -113,6 +118,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn("确认注册", response.text)
         self.assertIn("取消", response.text)
         self.assertIn("进入账户中心", response.text)
+        self.assertIn("home-predict-overlay", response.text)
+        self.assertIn("正在生成预测分析", response.text)
+        self.assertIn("预测超时……", response.text)
+        self.assertIn("系统错误，请联系管理WX 7354280", response.text)
         self.assertIn("你还剩余", response.text)
         self.assertIn("包年不限制查询。详情查阅 账户中心。", response.text)
         self.assertNotIn("每次普通查询扣", response.text)
@@ -138,7 +147,6 @@ class ApiTests(unittest.TestCase):
         self.assertIn("name === 'logout'", response.text)
         self.assertIn("资金面分析", response.text)
         self.assertIn("综合结论", response.text)
-        self.assertIn("返回预测详情", response.text)
         self.assertIn("重新加载资金面数据", response.text)
         self.assertIn("数据更新时间", response.text)
         self.assertIn("样本交易日数", response.text)
@@ -151,7 +159,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("融资余额3日斜率", response.text)
         self.assertIn("融资余额3日加速度", response.text)
         self.assertIn("结论类型", response.text)
-        self.assertIn("id='fund-view'", response.text)
+        self.assertNotIn("id='fund-view'", response.text)
+        self.assertNotIn("id='fund-analysis-button'", response.text)
         self.assertIn("后台用户管理", response.text)
         self.assertIn("联系方式", response.text)
         self.assertIn("重置密码", response.text)
@@ -396,6 +405,42 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["analysis"]["flowMetrics"]["consecutiveInflowDays"], 10)
         self.assertAlmostEqual(payload["analysis"]["flowMetrics"]["netInflow10d"], 847000000.0)
         self.assertEqual(len(payload["history"]), 10)
+
+    def test_fund_analysis_endpoint_auto_syncs_when_requested(self):
+        fund_store = FakeFundStore(factors=[])
+        sync_service = Mock()
+
+        def sync_recent(history_days: int, trade_date: date | None = None):
+            fund_store.factors = _sample_fund_factors()
+            result = Mock()
+            result.synced_trade_dates = (date(2026, 5, 23),)
+            result.to_dict.return_value = {
+                "targetDate": "2026-05-23",
+                "requestedDays": history_days,
+                "syncedDays": 1,
+                "skippedDays": 14,
+                "syncedTradeDates": ["2026-05-23"],
+                "skippedTradeDates": [],
+                "rows": 5191,
+                "providers": ["akshare"],
+            }
+            return result
+
+        sync_service.sync_recent.side_effect = sync_recent
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.FundFactorStore", return_value=fund_store
+        ), patch("kronos_mvp.api.FundFactorSyncService", return_value=sync_service), patch(
+            "kronos_mvp.api.build_default_fund_providers", return_value=[]
+        ), patch("kronos_mvp.api.latest_a_share_trade_date", return_value=date(2026, 5, 23)):
+            client = TestClient(create_app())
+            _register(client)
+            response = client.get("/api/funds/600519?auto_sync=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["sync"]["attempted"])
+        self.assertTrue(response.json()["sync"]["updated"])
+        sync_service.sync_recent.assert_called_once_with(history_days=15, trade_date=date(2026, 5, 23))
 
     def test_predict_requires_login(self):
         store = FakeStore()
