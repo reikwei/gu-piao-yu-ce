@@ -165,6 +165,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("融资余额3日斜率", response.text)
         self.assertIn("融资余额3日加速度", response.text)
         self.assertIn("结论类型", response.text)
+        self.assertIn("getLatestAvailableMarginRecord", response.text)
+        self.assertIn("最新交易日暂未拿到融资明细，当前展示最近一次可用融资数据", response.text)
         self.assertNotIn("id='fund-view'", response.text)
         self.assertNotIn("id='fund-analysis-button'", response.text)
         self.assertIn("后台用户管理", response.text)

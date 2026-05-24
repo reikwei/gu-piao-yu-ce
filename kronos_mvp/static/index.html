@@ -2073,7 +2073,9 @@
         if (!currentPredictionData || currentPredictionData.symbol !== symbol) {
           return;
         }
-        currentFundAnalysis = payload.analysis || null;
+        currentFundAnalysis = payload.analysis
+          ? { ...payload.analysis, history: Array.isArray(payload.history) ? payload.history : [] }
+          : null;
         if (!currentFundAnalysis) {
           throw new Error('资金面分析结果为空。');
         }
@@ -2120,6 +2122,7 @@
 
     function renderFundAnalysis(analysis) {
       const latest = analysis.latest || {};
+      const latestAvailableMarginRecord = getLatestAvailableMarginRecord(analysis);
       const flowMetrics = analysis.flowMetrics || {};
       const marginMetrics = analysis.marginMetrics || {};
       const trendProfile = analysis.trendProfile || {};
@@ -2128,8 +2131,8 @@
       document.getElementById('fund-analysis-summary').textContent = analysis.summary || '资金面分析已完成。';
       document.getElementById('fund-net-inflow-value').textContent = formatSignedMoney(latest.fundNetInflow);
       document.getElementById('fund-net-ratio-value').textContent = formatSignedPercentFromNumber(latest.fundNetInflowRatio);
-      document.getElementById('fund-margin-balance-value').textContent = formatMoney(latest.marginBalance);
-      document.getElementById('fund-margin-buy-value').textContent = formatMoney(latest.marginBuyAmount);
+      document.getElementById('fund-margin-balance-value').textContent = formatMoney(latestAvailableMarginRecord ? latestAvailableMarginRecord.marginBalance : latest.marginBalance);
+      document.getElementById('fund-margin-buy-value').textContent = formatMoney(latestAvailableMarginRecord ? latestAvailableMarginRecord.marginBuyAmount : latest.marginBuyAmount);
       document.getElementById('fund-updated-at-value').textContent = formatDateTime(latest.updatedAt);
       document.getElementById('fund-history-days-value').textContent = `${analysis.historyDays || 1} 个交易日`;
       document.getElementById('fund-net-inflow-3d-value').textContent = formatSignedMoney(flowMetrics.netInflow3d);
@@ -2139,7 +2142,7 @@
       document.getElementById('fund-margin-slope-3d-value').textContent = formatSignedPercent(marginMetrics.balanceSlope3d);
       document.getElementById('fund-margin-acceleration-3d-value').textContent = formatSignedPercent(marginMetrics.balanceAcceleration3d);
       document.getElementById('fund-trend-profile-value').textContent = trendProfile.label || '--';
-      setFundMarginNote(buildFundMarginNote(latest));
+      setFundMarginNote(buildFundMarginNote(latest, latestAvailableMarginRecord));
       document.getElementById('fund-analysis-status').textContent = `截至 ${analysis.tradeDate || '--'}，已累计 ${analysis.historyDays || 1} 个交易日的资金面样本，系统会持续维护最近半个月的增量资金历史。`;
       document.getElementById('fund-component-list').innerHTML = (analysis.components || []).map(component => {
         const scoreText = `${component.score || 0}/25`;
@@ -2185,9 +2188,27 @@
       note.textContent = message || '';
     }
 
-    function buildFundMarginNote(latest) {
+    function getLatestAvailableMarginRecord(analysis) {
+      const history = Array.isArray(analysis.history) ? analysis.history : [];
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        const record = history[index];
+        if (record && (record.marginBalance != null || record.marginBuyAmount != null)) {
+          return record;
+        }
+      }
+      return analysis.latest || null;
+    }
+
+    function buildFundMarginNote(latest, latestAvailableMarginRecord) {
       const marginBalanceMissing = latest.marginBalance == null;
       const marginBuyMissing = latest.marginBuyAmount == null;
+      const hasFallbackMarginRecord = latestAvailableMarginRecord
+        && latestAvailableMarginRecord.tradeDate
+        && latestAvailableMarginRecord.tradeDate !== latest.tradeDate
+        && (latestAvailableMarginRecord.marginBalance != null || latestAvailableMarginRecord.marginBuyAmount != null);
+      if (hasFallbackMarginRecord) {
+        return `最新交易日暂未拿到融资明细，当前展示最近一次可用融资数据（截至 ${latestAvailableMarginRecord.tradeDate}）。这不会影响资金净额、资金占比和综合结论的展示。`;
+      }
       if (!marginBalanceMissing && !marginBuyMissing) {
         return '';
       }
