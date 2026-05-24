@@ -508,6 +508,17 @@
       white-space: pre-line;
     }
 
+    .home-predict-overlay-link {
+      color: var(--navy);
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 0.12em;
+    }
+
+    .home-predict-overlay-link:hover {
+      color: #8c1d1d;
+    }
+
     .home-predict-overlay.is-error .home-predict-overlay-card {
       border-color: rgba(191, 47, 47, 0.14);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 245, 244, 0.96));
@@ -1547,6 +1558,17 @@
     floatingMessageClose.addEventListener('click', hideFloatingMessage);
     predictButton.addEventListener('click', () => requestPrediction(symbolInput.value.trim()));
     accountCenterButton.addEventListener('click', openAccountCenter);
+    homePredictOverlay.addEventListener('click', event => {
+      const actionLink = event.target.closest('[data-overlay-action]');
+      if (!actionLink) {
+        return;
+      }
+      if (actionLink.dataset.overlayAction === 'open-account-center') {
+        event.preventDefault();
+        hideHomePredictOverlay();
+        openAccountCenter();
+      }
+    });
     document.getElementById('account-center-back').addEventListener('click', () => {
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入股票代码即可继续预测。';
@@ -2952,10 +2974,18 @@
       homePredictOverlay.classList.toggle('is-error', state.tone === 'error');
       homePredictOverlayEmoji.textContent = state.emoji;
       homePredictOverlayTitle.textContent = state.title;
-      homePredictOverlayBody.textContent = state.body;
-      homePredictOverlayHint.textContent = state.hint || '';
+      setOverlayCopy(homePredictOverlayBody, state.body, state.htmlBody || '');
+      setOverlayCopy(homePredictOverlayHint, state.hint || '', state.htmlHint || '');
       homePredictOverlayHint.hidden = !state.hint;
       homePredictOverlay.hidden = false;
+    }
+
+    function setOverlayCopy(element, text, html) {
+      if (html) {
+        element.innerHTML = html;
+        return;
+      }
+      element.textContent = text;
     }
 
     function hideHomePredictOverlay() {
@@ -2980,6 +3010,7 @@
         emoji: '⚠️',
         title: '免费次数已用完',
         body: '你的免费次数已用完，请到账户中心充值。',
+        htmlBody: '你的免费次数已用完，请到<a class="home-predict-overlay-link" data-overlay-action="open-account-center" href="#">账户中心</a>充值。',
         hint: '进入账户中心后，可选择小额充值或充值包年。',
         status: '你的免费次数已用完，请到账户中心充值。',
       };

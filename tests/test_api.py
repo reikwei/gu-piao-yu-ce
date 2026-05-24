@@ -128,6 +128,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("包年不限制查询。详情查阅 账户中心。", response.text)
         self.assertIn("你的免费次数已用完，请到账户中心充值。", response.text)
         self.assertIn("进入账户中心后，可选择小额充值或充值包年。", response.text)
+        self.assertIn("home-predict-overlay-link", response.text)
+        self.assertIn("open-account-center", response.text)
         self.assertNotIn("每次普通查询扣", response.text)
         self.assertIn("土豆A股预测研究院用户中心", response.text)
         self.assertIn("欢迎进入用户后台", response.text)
