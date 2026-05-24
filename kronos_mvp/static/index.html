@@ -798,6 +798,7 @@
           backgroundColor: 'rgba(17, 24, 39, 0.9)',
           borderWidth: 0,
           textStyle: { color: '#f8fafc' },
+          formatter: params => buildChartTooltip(params, envelope, historyDates.length),
         },
         axisPointer: { link: [{ xAxisIndex: 'all' }] },
         grid: [
@@ -931,6 +932,79 @@
         yAxis: { show: false },
         series: [],
       }, true);
+    }
+
+    function buildChartTooltip(params, envelope, historyCount) {
+      const items = Array.isArray(params) ? params : [params];
+      if (!items.length) {
+        return '';
+      }
+
+      const title = items[0].axisValueLabel || items[0].name || '--';
+      const lines = [`<div style="margin-bottom:8px;font-weight:700;">${title}</div>`];
+      let intervalRendered = false;
+
+      for (const item of items) {
+        if (!item || item.seriesName === '区间基线') {
+          continue;
+        }
+
+        if (item.seriesName === '历史 K 线' && Array.isArray(item.data)) {
+          const [openPrice, closePrice, lowPrice, highPrice] = item.data.map(normalizeTooltipNumber);
+          if ([openPrice, closePrice, lowPrice, highPrice].some(value => value === null)) {
+            continue;
+          }
+          lines.push(`${item.marker}${item.seriesName}`);
+          lines.push(buildTooltipMetric('开盘', formatPrice(openPrice)));
+          lines.push(buildTooltipMetric('收盘', formatPrice(closePrice)));
+          lines.push(buildTooltipMetric('最低', formatPrice(lowPrice)));
+          lines.push(buildTooltipMetric('最高', formatPrice(highPrice)));
+          continue;
+        }
+
+        if (item.seriesName === '预测区间') {
+          if (intervalRendered) {
+            continue;
+          }
+          const forecastIndex = item.dataIndex - historyCount;
+          if (forecastIndex < 0 || forecastIndex >= envelope.lower.length) {
+            continue;
+          }
+          lines.push(buildTooltipRow(item.marker, item.seriesName, `${formatPrice(envelope.lower[forecastIndex])} - ${formatPrice(envelope.upper[forecastIndex])}`));
+          intervalRendered = true;
+          continue;
+        }
+
+        if (item.seriesName === '成交量') {
+          const volume = normalizeTooltipNumber(item.value);
+          if (volume === null) {
+            continue;
+          }
+          lines.push(buildTooltipRow(item.marker, item.seriesName, compactFormatter.format(volume)));
+          continue;
+        }
+
+        const numericValue = normalizeTooltipNumber(item.value);
+        if (numericValue === null) {
+          continue;
+        }
+        lines.push(buildTooltipRow(item.marker, item.seriesName, formatPrice(numericValue)));
+      }
+
+      return lines.join('');
+    }
+
+    function buildTooltipMetric(label, value) {
+      return `<div style="display:flex;justify-content:space-between;gap:16px;padding-left:18px;"><span>${label}</span><strong>${value}</strong></div>`;
+    }
+
+    function buildTooltipRow(marker, label, value) {
+      return `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${marker}${label}</span><strong>${value}</strong></div>`;
+    }
+
+    function normalizeTooltipNumber(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
     }
 
     function buildForecastEnvelope(data, analysis) {
