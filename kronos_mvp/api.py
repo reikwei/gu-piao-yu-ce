@@ -14,7 +14,14 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from .funds import DEFAULT_FUND_HISTORY_DAYS, FundFactorStore, build_fund_analysis
+from .funds import (
+    DEFAULT_FUND_HISTORY_DAYS,
+    FundFactorStore,
+    FundFactorSyncService,
+    build_default_fund_providers,
+    build_fund_analysis,
+    latest_a_share_trade_date,
+)
 from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers
@@ -228,15 +235,24 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/api/funds/{symbol}")
-    def fund_analysis(symbol: str, request: Request) -> dict[str, object]:
+    def fund_analysis(symbol: str, request: Request, auto_sync: bool = False) -> dict[str, object]:
         _require_current_user(request, account_store)
+        sync_info = {"attempted": False, "updated": False}
+        if auto_sync:
+            sync_info = _auto_sync_funds(fund_store)
         factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
+        if not factors and auto_sync and not sync_info.get("attempted"):
+            sync_info = _auto_sync_funds(fund_store, force=True)
+            factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
         if not factors:
+            if sync_info.get("attempted") and sync_info.get("warning"):
+                raise HTTPException(status_code=502, detail=f"资金面同步失败：{sync_info['warning']}")
             raise HTTPException(status_code=404, detail="该股票暂无资金面数据，请等待每日 18:09 同步后重试。")
         return {
             "symbol": symbol,
             "history": [factor.to_dict() for factor in factors],
             "analysis": build_fund_analysis(factors),
+            "sync": sync_info,
         }
 
     @app.post("/api/payments/orders")
@@ -638,6 +654,40 @@ def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
             "updated": True,
             "provider": result.provider,
             "rows": result.rows,
+        }
+    except ProviderError as exc:
+        return {
+            "attempted": True,
+            "updated": False,
+            "warning": str(exc),
+        }
+
+
+def _auto_sync_funds(store: FundFactorStore, force: bool = False) -> dict[str, object]:
+    try:
+        target_trade_date = latest_a_share_trade_date()
+    except ProviderError as exc:
+        return {
+            "attempted": True,
+            "updated": False,
+            "warning": str(exc),
+        }
+
+    current_trade_date = store.get_latest_trade_date()
+    if not force and current_trade_date is not None and current_trade_date >= target_trade_date:
+        return {
+            "attempted": False,
+            "updated": False,
+            "latestTradeDate": current_trade_date.isoformat(),
+        }
+
+    service = FundFactorSyncService(store=store, providers=build_default_fund_providers())
+    try:
+        result = service.sync_recent(history_days=_fund_analysis_history_days(), trade_date=target_trade_date)
+        return {
+            "attempted": True,
+            "updated": bool(result.synced_trade_dates),
+            **result.to_dict(),
         }
     except ProviderError as exc:
         return {
