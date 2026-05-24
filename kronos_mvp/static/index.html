@@ -817,28 +817,28 @@
 
       const fontSize = Math.max(28, Math.round(canvas.width / 34));
       const rotation = -Math.PI / 6;
-      const diagonal = Math.hypot(canvas.width, canvas.height);
-      const isTallPage = canvas.height >= canvas.width;
-      const columnCount = isTallPage ? 2 : 3;
-      const rowCount = isTallPage ? 3 : 2;
-      const rangeX = diagonal * 0.42;
-      const rangeY = diagonal * 0.34;
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const horizontalSpread = Math.max(fontSize * 4.8, canvas.width * 0.32);
+      const verticalSpread = Math.max(fontSize * 3.8, Math.min(canvas.height * 0.2, canvas.width * 0.42));
+      const columnOffsets = [-horizontalSpread / 2, horizontalSpread / 2];
+      const rowOffsets = [-verticalSpread, 0, verticalSpread];
 
       context.save();
-      context.translate(canvas.width / 2, canvas.height / 2);
-      context.rotate(rotation);
       context.font = `700 ${fontSize}px "Noto Sans SC", sans-serif`;
       context.fillStyle = 'rgba(23, 50, 77, 0.12)';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
 
-      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-        const y = rowCount === 1 ? 0 : -rangeY + (2 * rangeY * rowIndex) / (rowCount - 1);
-        for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-          const x = columnCount === 1 ? 0 : -rangeX + (2 * rangeX * columnIndex) / (columnCount - 1);
-          context.fillText(text, x, y);
-        }
-      }
+      rowOffsets.forEach(offsetY => {
+        columnOffsets.forEach(offsetX => {
+          context.save();
+          context.translate(centerX + offsetX, centerY + offsetY);
+          context.rotate(rotation);
+          context.fillText(text, 0, 0);
+          context.restore();
+        });
+      });
 
       context.restore();
     }
