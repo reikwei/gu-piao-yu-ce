@@ -454,16 +454,16 @@
     <main>
       <section class='view centered' id='auth-view'>
         <div class='card entry-card'>
-          <h1>研究访问验证</h1>
-          <p>输入访问密码以后，才会显示股票输入页面和后续预测结果。</p>
-          <div class='entry-note'>未来 7 个交易日 · 概率化股票预测</div>
+          <h1>请输入登录密码</h1>
+          <p>确认密码以后，才会进入正常首页。</p>
+          <div class='entry-note'>请先完成登录验证</div>
           <div class='input-stack'>
-            <label>访问密码
+            <label>登录密码
               <input id='access-password' type='password' autocomplete='current-password' placeholder='请输入访问密码'>
             </label>
             <button class='primary-button' id='login-button' type='button'>进入页面</button>
           </div>
-          <div class='status-text' id='auth-status'>请输入访问密码。</div>
+          <div class='status-text' id='auth-status'>请先输入登录密码。</div>
         </div>
       </section>
 
@@ -629,7 +629,7 @@
     async function login() {
       const password = document.getElementById('access-password').value;
       if (!password) {
-        authStatusEl.textContent = '请输入访问密码。';
+        authStatusEl.textContent = '请先输入登录密码。';
         return;
       }
       setAuthBusy(true, '正在校验访问密码...');
@@ -640,7 +640,7 @@
           body: JSON.stringify({ password }),
         });
         document.getElementById('access-password').value = '';
-        authStatusEl.textContent = '校验成功。';
+        authStatusEl.textContent = '密码校验成功。';
         showView('home');
         homeStatusEl.textContent = '请输入股票代码后点击预测。';
       } catch (error) {
@@ -661,11 +661,11 @@
         const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`));
         const analysis = data.analysis || deriveAnalysis(data, DEFAULT_HORIZON);
         const envelope = buildForecastEnvelope(data, analysis);
-        renderDetail(data, analysis, envelope);
         showView('detail');
+        renderDetail(data, analysis, envelope);
       } catch (error) {
         if (error && error.authRequired) {
-          authStatusEl.textContent = '请先输入访问密码。';
+          authStatusEl.textContent = '请先输入登录密码。';
           showView('auth');
         } else {
           homeStatusEl.textContent = error.message || '预测失败';
@@ -701,9 +701,7 @@
         element.hidden = key !== name;
       });
       detailTopbar.hidden = name !== 'detail';
-      if (name !== 'detail') {
-        chart.resize();
-      }
+      requestAnimationFrame(() => chart.resize());
     }
 
     async function fetchAuthStatus() {

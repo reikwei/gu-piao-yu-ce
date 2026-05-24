@@ -152,7 +152,7 @@ def _get_a_share_calendar() -> Any:
         import exchange_calendars as xcals
     except ImportError as exc:
         raise RuntimeError(
-            "exchange_calendars is required for A-share trading-day forecasting. "
-            "Install project requirements before running predictions."
+            "A 股预测需要交易日历依赖 exchange_calendars。"
+            "请先安装 requirements.txt 里的项目依赖后再执行预测。"
         ) from exc
     return xcals.get_calendar("XSHG")
