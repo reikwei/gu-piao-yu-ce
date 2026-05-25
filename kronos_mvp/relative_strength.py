@@ -345,7 +345,7 @@ class RelativeStrengthSyncService:
         except ProviderError as exc:
             if self.store.list_symbol_industries(symbols or None):
                 return 0, f"行业映射刷新失败，已回退到缓存：{exc}"
-            raise
+            return 0, f"行业映射刷新失败，本次仅同步指数基准：{exc}"
 
     def _sync_benchmark(self, benchmark: RelativeBenchmark, history_days: int) -> int:
         start_date = _sync_start_date(self.store.get_latest_date(benchmark.key), history_days)

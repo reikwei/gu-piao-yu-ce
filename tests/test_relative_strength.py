@@ -177,6 +177,22 @@ class RelativeStrengthSyncServiceTests(unittest.TestCase):
             self.assertTrue(result.warnings)
             self.assertIn("行业映射刷新失败", result.warnings[0])
 
+    def test_sync_market_falls_back_to_benchmarks_when_mapping_refresh_fails_without_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider(mapping_error=ProviderError("upstream closed connection"))
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+
+            result = service.sync_market(history_days=20)
+
+            self.assertEqual(result.mapping_rows, 0)
+            self.assertEqual(provider.mapping_calls, 1)
+            self.assertEqual(result.benchmark_labels, ("沪深300", "上证指数", "深证成指", "创业板指"))
+            self.assertEqual(result.industry_names, ())
+            self.assertEqual(result.rows, 8)
+            self.assertTrue(result.warnings)
+            self.assertIn("本次仅同步指数基准", result.warnings[0])
+
 
 class RelativeStrengthAnalysisTests(unittest.TestCase):
     def test_build_relative_strength_analysis_flags_outperformance(self):
