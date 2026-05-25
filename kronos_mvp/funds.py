@@ -215,6 +215,13 @@ class FundFactorStore:
             return None
         return date.fromisoformat(row["latest_trade_date"])
 
+    def get_last_updated_at(self) -> str | None:
+        with self._connection() as conn:
+            row = conn.execute("SELECT MAX(updated_at) AS latest_updated_at FROM fund_factors").fetchone()
+        if row is not None and row["latest_updated_at"] is not None:
+            return str(row["latest_updated_at"])
+        return None
+
     def get_trade_dates(self, start_date: date | None = None, end_date: date | None = None) -> list[date]:
         clauses: list[str] = []
         params: list[str] = []

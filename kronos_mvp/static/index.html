@@ -702,6 +702,14 @@
       line-height: 1.7;
     }
 
+    .home-data-freshness {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      font-variant-numeric: tabular-nums;
+    }
+
     .detail-stack {
       display: grid;
       gap: 16px;
@@ -1138,6 +1146,7 @@
               <button class='primary-button' id='predict-button' type='button'>开始预测</button>
             </div>
             <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
+            <div class='home-data-freshness' id='home-data-freshness'>最新数据更新时间：读取中...</div>
             <div class='home-predict-overlay' id='home-predict-overlay' hidden>
               <div class='home-predict-overlay-card'>
                 <div class='home-predict-overlay-emoji' id='home-predict-overlay-emoji'>⏳</div>
@@ -1500,6 +1509,7 @@
     const authStatusEl = document.getElementById('auth-status');
     const registerStatusEl = document.getElementById('register-status');
     const homeStatusEl = document.getElementById('home-status');
+    const homeDataFreshnessEl = document.getElementById('home-data-freshness');
     const homePredictOverlay = document.getElementById('home-predict-overlay');
     const homePredictOverlayEmoji = document.getElementById('home-predict-overlay-emoji');
     const homePredictOverlayTitle = document.getElementById('home-predict-overlay-title');
@@ -1526,6 +1536,7 @@
     document.getElementById('back-home').addEventListener('click', () => {
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
+      void loadLatestDataFreshness();
     });
     reloadFundButton.addEventListener('click', () => loadFundAnalysis({ autoSync: true, scrollIntoView: true }));
     captureButton.addEventListener('click', savePredictionScreenshot);
@@ -1572,6 +1583,7 @@
     document.getElementById('account-center-back').addEventListener('click', () => {
       showView('home');
       homeStatusEl.textContent = '已返回首页，输入股票代码即可继续预测。';
+      void loadLatestDataFreshness();
     });
     document.getElementById('logout-button').addEventListener('click', logout);
     document.getElementById('recharge-button').addEventListener('click', () => createPaymentOrder('balance'));
@@ -1618,6 +1630,7 @@
       currentUser = status.user || null;
       renderAccountState();
       showView('home');
+      void loadLatestDataFreshness();
     }
 
     async function login() {
@@ -1640,6 +1653,7 @@
         authStatusEl.textContent = '登录成功。';
         showView('home');
         homeStatusEl.textContent = '请输入股票代码后点击预测。';
+        void loadLatestDataFreshness();
       } catch (error) {
         authStatusEl.textContent = error.message || '登录失败';
       } finally {
@@ -1708,6 +1722,7 @@
         renderAccountState();
         showView('home');
         homeStatusEl.textContent = '注册成功，已获得 10 次免费预测机会。';
+        void loadLatestDataFreshness();
       } catch (error) {
         registerStatusEl.textContent = error.message || '注册失败';
       } finally {
@@ -2465,6 +2480,22 @@
       }
     }
 
+    async function loadLatestDataFreshness() {
+      homeDataFreshnessEl.textContent = '最新数据更新时间：读取中...';
+      try {
+        const payload = await fetchJson(buildApiUrl('/api/data-freshness'));
+        renderLatestDataFreshness(payload.updatedAt);
+      } catch {
+        homeDataFreshnessEl.textContent = '最新数据更新时间：暂未取得';
+      }
+    }
+
+    function renderLatestDataFreshness(value) {
+      homeDataFreshnessEl.textContent = value
+        ? `最新数据更新时间：${formatDataFreshnessTimestamp(value)}`
+        : '最新数据更新时间：暂未记录';
+    }
+
     async function fetchJson(url, options = {}) {
       const { timeoutMs = 0, ...fetchOptions } = options;
       const controller = timeoutMs > 0 ? new AbortController() : null;
@@ -2762,6 +2793,27 @@
         minute: '2-digit',
         hour12: false,
       }).format(date).replace('/', '-').replace('/', '-');
+    }
+
+    function formatDataFreshnessTimestamp(value) {
+      if (!value) {
+        return '--';
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      const parts = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(date);
+      const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+      return `${values.year}年${values.month}月${values.day}日 ${values.hour}点 ${values.minute}分`;
     }
 
     function buildChartTooltip(params, envelope, historyCount) {

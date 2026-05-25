@@ -5,6 +5,7 @@ import html
 import hmac
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,18 @@ def create_app() -> FastAPI:
     def config_js() -> PlainTextResponse:
         payload = json.dumps(_client_config(), ensure_ascii=False)
         return PlainTextResponse(f"window.KRONOS_CONFIG = {payload};\n", media_type="application/javascript")
+
+    @app.get("/api/data-freshness")
+    def data_freshness() -> dict[str, object]:
+        kline_updated_at = store.get_last_updated_at()
+        fund_updated_at = fund_store.get_last_updated_at()
+        latest_trade_date = fund_store.get_latest_trade_date()
+        return {
+            "updatedAt": _latest_timestamp(kline_updated_at, fund_updated_at),
+            "klineUpdatedAt": kline_updated_at,
+            "fundUpdatedAt": fund_updated_at,
+            "fundLatestTradeDate": latest_trade_date.isoformat() if latest_trade_date is not None else None,
+        }
 
     @app.get("/auth/status")
     def auth_status(request: Request) -> dict[str, object]:
@@ -695,6 +708,23 @@ def _auto_sync_funds(store: FundFactorStore, force: bool = False) -> dict[str, o
             "updated": False,
             "warning": str(exc),
         }
+
+
+def _latest_timestamp(*values: str | None) -> str | None:
+    latest_value: str | None = None
+    latest_moment: datetime | None = None
+    for value in values:
+        if not value:
+            continue
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            moment = datetime.fromisoformat(normalized)
+        except ValueError:
+            continue
+        if latest_moment is None or moment > latest_moment:
+            latest_moment = moment
+            latest_value = value
+    return latest_value
 
 
 def _mean_abs_return(values: list[float]) -> float:

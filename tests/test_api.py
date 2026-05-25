@@ -49,11 +49,12 @@ def _sample_fund_factors() -> list[FundFactor]:
 
 
 class FakeStore:
-    def __init__(self, *args, candles: list[Candle] | None = None, empty_first: bool = False, **kwargs):
+    def __init__(self, *args, candles: list[Candle] | None = None, empty_first: bool = False, last_updated_at: str | None = None, **kwargs):
         self.db_path = Path("fake.db")
         self.candles = candles or _sample_candles()
         self.empty_first = empty_first
         self.calls = 0
+        self.last_updated_at = last_updated_at
 
     def get_latest(self, symbol: str, limit: int = 512) -> list[Candle]:
         self.calls += 1
@@ -61,11 +62,15 @@ class FakeStore:
             return []
         return list(self.candles)
 
+    def get_last_updated_at(self):
+        return self.last_updated_at
+
 
 class FakeFundStore:
-    def __init__(self, *args, factors: list[FundFactor] | None = None, **kwargs):
+    def __init__(self, *args, factors: list[FundFactor] | None = None, last_updated_at: str | None = None, **kwargs):
         self.db_path = Path("fake_fund.db")
         self.factors = list(factors or [])
+        self.last_updated_at = last_updated_at
 
     def get_latest(self, symbol: str, limit: int = 15) -> list[FundFactor]:
         return [factor for factor in self.factors if factor.symbol == symbol][-limit:]
@@ -74,6 +79,9 @@ class FakeFundStore:
         if not self.factors:
             return None
         return max(factor.trade_date for factor in self.factors)
+
+    def get_last_updated_at(self):
+        return self.last_updated_at
 
 
 def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
@@ -122,6 +130,9 @@ class ApiTests(unittest.TestCase):
         self.assertIn("进入账户中心", response.text)
         self.assertIn("home-predict-overlay", response.text)
         self.assertIn("正在生成预测分析", response.text)
+        self.assertIn("id='home-data-freshness'", response.text)
+        self.assertIn("最新数据更新时间：读取中...", response.text)
+        self.assertIn("/api/data-freshness", response.text)
         self.assertIn("预测超时……", response.text)
         self.assertIn("系统错误，请联系管理WX 7354280", response.text)
         self.assertIn("你还剩余", response.text)
@@ -214,6 +225,27 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("access-control-allow-origin"), "https://stocks.example.com")
         self.assertEqual(response.headers.get("access-control-allow-credentials"), "true")
+
+    def test_data_freshness_endpoint_prefers_latest_source_update_time(self):
+        store = FakeStore(last_updated_at="2026-05-25T16:30:00+08:00")
+        fund_store = FakeFundStore(
+            factors=_sample_fund_factors(),
+            last_updated_at="2026-05-25T18:09:00+08:00",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.FundFactorStore", return_value=fund_store):
+            client = TestClient(create_app())
+
+            response = client.get("/api/data-freshness")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["updatedAt"], "2026-05-25T18:09:00+08:00")
+        self.assertEqual(payload["klineUpdatedAt"], "2026-05-25T16:30:00+08:00")
+        self.assertEqual(payload["fundUpdatedAt"], "2026-05-25T18:09:00+08:00")
+        self.assertEqual(payload["fundLatestTradeDate"], "2026-05-23")
 
     def test_register_grants_ten_free_credits(self):
         with tempfile.TemporaryDirectory() as tmp:

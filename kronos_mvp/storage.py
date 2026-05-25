@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from collections.abc import Iterator
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .models import Candle
+
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_SYNC_METADATA_KEY = "last_updated_at"
 
 
 class CandleStore:
@@ -47,8 +52,19 @@ class CandleStore:
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_candles_symbol_date ON candles(symbol, date)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
 
     def upsert_many(self, symbol: str, candles: list[Candle]) -> int:
+        if not candles:
+            return 0
+
         normalized = normalize_symbol(symbol)
         rows = [
             (
@@ -78,6 +94,7 @@ class CandleStore:
                 """,
                 rows,
             )
+            self._touch_last_updated_at(conn)
         return len(rows)
 
     def get_latest(self, symbol: str, limit: int = 512) -> list[Candle]:
@@ -114,6 +131,19 @@ class CandleStore:
             return None
         return date.fromisoformat(row["latest_date"])
 
+    def get_last_updated_at(self) -> str | None:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT value FROM sync_metadata WHERE key = ?",
+                (_SYNC_METADATA_KEY,),
+            ).fetchone()
+            has_rows = conn.execute("SELECT 1 FROM candles LIMIT 1").fetchone() is not None
+        if row is not None and row["value"] is not None:
+            return str(row["value"])
+        if has_rows and self.db_path.exists() and self.db_path.stat().st_size > 0:
+            return datetime.fromtimestamp(self.db_path.stat().st_mtime, tz=SHANGHAI_TZ).isoformat(timespec="seconds")
+        return None
+
     def merge_from(self, source_db_path: str | Path) -> int:
         source_path = Path(source_db_path)
         if not source_path.exists():
@@ -140,10 +170,22 @@ class CandleStore:
                     FROM source_db.candles
                     """
                 )
+                self._touch_last_updated_at(conn)
                 conn.commit()
             finally:
                 conn.execute("DETACH DATABASE source_db")
         return int(total)
+
+    def _touch_last_updated_at(self, conn: sqlite3.Connection, value: str | None = None) -> None:
+        timestamp = value or datetime.now(SHANGHAI_TZ).isoformat(timespec="seconds")
+        conn.execute(
+            """
+            INSERT INTO sync_metadata(key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (_SYNC_METADATA_KEY, timestamp),
+        )
 
 
 def normalize_symbol(symbol: str) -> str:

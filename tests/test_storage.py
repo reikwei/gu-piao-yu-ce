@@ -36,6 +36,20 @@ class CandleStoreTests(unittest.TestCase):
             self.assertEqual(len(candles), 1)
             self.assertEqual(candles[0].close, 2.5)
 
+    def test_upsert_records_last_updated_at(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+
+            store.upsert_many(
+                "600519",
+                [Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100)],
+            )
+
+            last_updated_at = store.get_last_updated_at()
+
+            self.assertIsNotNone(last_updated_at)
+            self.assertIn("T", str(last_updated_at))
+
     def test_merge_from_imports_rows_from_other_database(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = CandleStore(Path(tmp) / "target.db")
@@ -51,6 +65,7 @@ class CandleStoreTests(unittest.TestCase):
             candles = target.get_latest("600519", limit=1)
             self.assertEqual(len(candles), 1)
             self.assertEqual(candles[0].close, 11)
+            self.assertIsNotNone(target.get_last_updated_at())
 
 
 if __name__ == "__main__":
