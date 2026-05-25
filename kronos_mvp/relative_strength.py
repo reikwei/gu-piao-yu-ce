@@ -260,11 +260,16 @@ class RelativeStrengthSyncService:
             mapping_rows = 0
 
         benchmark = benchmark_for_symbol(normalized)
-        rows = self._sync_benchmark(benchmark, history_days=history_days)
+        rows, benchmark_warning = self._sync_benchmark_or_warn(benchmark, history_days=history_days)
+        if benchmark_warning:
+            warnings.append(benchmark_warning)
         mapping = self.store.get_symbol_industry(normalized)
         industry_names: list[str] = []
         if mapping is not None:
-            rows += self._sync_industry(mapping.industry_name, history_days=history_days)
+            industry_rows, industry_warning = self._sync_industry_or_warn(mapping.industry_name, history_days=history_days)
+            rows += industry_rows
+            if industry_warning:
+                warnings.append(industry_warning)
             industry_names.append(mapping.industry_name)
         else:
             warnings.append(f"{normalized} 暂未匹配到行业映射")
@@ -303,7 +308,10 @@ class RelativeStrengthSyncService:
         benchmark_labels: list[str] = []
         rows = 0
         for benchmark in available_benchmarks(normalized_symbols or None):
-            rows += self._sync_benchmark(benchmark, history_days=history_days)
+            benchmark_rows, benchmark_warning = self._sync_benchmark_or_warn(benchmark, history_days=history_days)
+            rows += benchmark_rows
+            if benchmark_warning:
+                warnings.append(benchmark_warning)
             benchmark_labels.append(benchmark.label)
 
         industry_names: list[str] = []
@@ -312,7 +320,10 @@ class RelativeStrengthSyncService:
             if mapping.industry_name in seen_industries:
                 continue
             seen_industries.add(mapping.industry_name)
-            rows += self._sync_industry(mapping.industry_name, history_days=history_days)
+            industry_rows, industry_warning = self._sync_industry_or_warn(mapping.industry_name, history_days=history_days)
+            rows += industry_rows
+            if industry_warning:
+                warnings.append(industry_warning)
             industry_names.append(mapping.industry_name)
 
         return RelativeStrengthSyncResult(
@@ -354,6 +365,14 @@ class RelativeStrengthSyncService:
             return 0
         return self.store.upsert_candles(benchmark.key, candles)
 
+    def _sync_benchmark_or_warn(self, benchmark: RelativeBenchmark, history_days: int) -> tuple[int, str | None]:
+        try:
+            return self._sync_benchmark(benchmark, history_days=history_days), None
+        except ProviderError as exc:
+            if self.store.get_latest_date(benchmark.key) is not None:
+                return 0, f"{benchmark.label} 指数同步失败，已回退到缓存：{exc}"
+            return 0, f"{benchmark.label} 指数同步失败，本次已跳过：{exc}"
+
     def _sync_industry(self, industry_name: str, history_days: int) -> int:
         industry_key = industry_key_from_name(industry_name)
         start_date = _sync_start_date(self.store.get_latest_date(industry_key), history_days)
@@ -361,6 +380,15 @@ class RelativeStrengthSyncService:
         if not candles:
             return 0
         return self.store.upsert_candles(industry_key, candles)
+
+    def _sync_industry_or_warn(self, industry_name: str, history_days: int) -> tuple[int, str | None]:
+        try:
+            return self._sync_industry(industry_name, history_days=history_days), None
+        except ProviderError as exc:
+            industry_key = industry_key_from_name(industry_name)
+            if self.store.get_latest_date(industry_key) is not None:
+                return 0, f"{industry_name} 行业K线同步失败，已回退到缓存：{exc}"
+            return 0, f"{industry_name} 行业K线同步失败，本次已跳过：{exc}"
 
 
 def build_relative_strength_analysis(
