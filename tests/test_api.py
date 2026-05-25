@@ -410,12 +410,15 @@ class ApiTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
             "kronos_mvp.api.CandleStore", return_value=store
-        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor), patch(
+            "kronos_mvp.api.lookup_a_share_name", return_value="贵州茅台"
+        ):
             client = TestClient(create_app())
             _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3&auto_sync=false")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["symbolName"], "贵州茅台")
         analysis = response.json()["analysis"]
         self.assertEqual(analysis["horizon"], 1)
         self.assertEqual(analysis["signal"], "bullish")

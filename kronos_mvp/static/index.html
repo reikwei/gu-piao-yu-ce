@@ -2050,7 +2050,8 @@
     }
 
     function renderDetail(data, analysis, envelope) {
-      document.getElementById('detail-title').textContent = `${data.symbol} 概率预测详情`;
+      const symbolLabel = data.symbolName ? `${data.symbol} ${data.symbolName}` : data.symbol;
+      document.getElementById('detail-title').textContent = `${symbolLabel} 概率预测详情`;
       detailStatusEl.textContent = buildPredictionStatus(data, analysis);
 
       renderSignal(analysis);
@@ -2831,11 +2832,12 @@
           continue;
         }
 
-        if (item.seriesName === '历史 K 线' && Array.isArray(item.data)) {
-          const [openPrice, closePrice, lowPrice, highPrice] = item.data.map(normalizeTooltipNumber);
-          if ([openPrice, closePrice, lowPrice, highPrice].some(value => value === null)) {
+        if (item.seriesName === '历史 K 线') {
+          const candlestickValues = extractCandlestickTooltipValues(item);
+          if (!candlestickValues) {
             continue;
           }
+          const [openPrice, closePrice, lowPrice, highPrice] = candlestickValues;
           lines.push(`${item.marker}${item.seriesName}`);
           lines.push(buildTooltipMetric('开盘', formatPrice(openPrice)));
           lines.push(buildTooltipMetric('收盘', formatPrice(closePrice)));
@@ -2887,6 +2889,19 @@
     function normalizeTooltipNumber(value) {
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function extractCandlestickTooltipValues(item) {
+      const source = Array.isArray(item.value)
+        ? item.value
+        : Array.isArray(item.data)
+          ? item.data
+          : null;
+      if (!source || source.length < 4) {
+        return null;
+      }
+      const values = source.slice(-4).map(normalizeTooltipNumber);
+      return values.every(value => value !== null) ? values : null;
     }
 
     function buildForecastEnvelope(data, analysis) {

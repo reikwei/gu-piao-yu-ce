@@ -25,7 +25,7 @@ from .funds import (
 )
 from .models import SyncResult
 from .predictors import KronosPredictor
-from .providers import ProviderError, build_default_providers
+from .providers import ProviderError, build_default_providers, lookup_a_share_name
 from .storage import CandleStore
 from .sync import DataSyncService
 from .accounts import (
@@ -232,8 +232,10 @@ def create_app() -> FastAPI:
             result = predictor.predict(symbol, candles, horizon=horizon, paths=paths)
             account_store.mark_prediction_succeeded(int(usage["id"]))
             fresh_user = account_store.get_user(int(user["id"]))
+            symbol_name = lookup_a_share_name(symbol)
             return {
                 **result.to_dict(),
+                "symbolName": symbol_name,
                 "history": [candle.to_dict() for candle in candles[-120:]],
                 "analysis": _build_prediction_analysis(candles, result, horizon),
                 "lookback": len(candles),

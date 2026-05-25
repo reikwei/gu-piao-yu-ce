@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from kronos_mvp.providers import AkShareDailyProvider, BaoStockDailyProvider, ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols
+from kronos_mvp.providers import AkShareDailyProvider, BaoStockDailyProvider, ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols, lookup_a_share_name
 
 
 class ProviderSymbolListTests(unittest.TestCase):
@@ -44,6 +44,15 @@ class ProviderSymbolListTests(unittest.TestCase):
             symbols = _list_symbols_from_akshare(market="sh")
 
         self.assertEqual(symbols, ["600519", "601398", "688001", "689009"])
+
+    def test_lookup_a_share_name_reads_name_from_akshare_symbol_table(self):
+        fake_ak = SimpleNamespace(
+            stock_info_sh_name_code=lambda: pd.DataFrame({"证券代码": ["600835"], "证券简称": ["上海机电"]}),
+            stock_info_a_code_name=lambda: pd.DataFrame({"code": ["600519"], "name": ["贵州茅台"]}),
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            self.assertEqual(lookup_a_share_name("600835"), "上海机电")
 
     def test_infer_a_share_market_maps_supported_exchanges(self):
         self.assertEqual(infer_a_share_market("600519"), "sh")

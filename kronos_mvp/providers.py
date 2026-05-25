@@ -257,6 +257,16 @@ def list_a_share_symbols(market: str = "all") -> list[str]:
     raise ProviderError("; ".join(errors) if errors else "no providers configured")
 
 
+def lookup_a_share_name(symbol: str) -> str | None:
+    normalized = normalize_symbol(symbol)
+    if not _is_a_share_symbol(normalized):
+        return None
+    try:
+        return _list_symbol_name_map_from_akshare(infer_a_share_market(normalized)).get(normalized)
+    except ProviderError:
+        return None
+
+
 def _parse_date(value: object) -> date:
     text = str(value)
     if len(text) == 8 and text.isdigit():
@@ -266,6 +276,55 @@ def _parse_date(value: object) -> date:
 
 def _configured_provider_names() -> list[str]:
     return [name.strip().lower() for name in os.getenv("DATA_PROVIDERS", "akshare,baostock,tushare").split(",") if name.strip()]
+
+
+@lru_cache(maxsize=4)
+def _list_symbol_name_map_from_akshare(market: str) -> dict[str, str]:
+    try:
+        import akshare as ak
+    except ImportError as exc:
+        raise ProviderError("akshare is not installed") from exc
+
+    mapping: dict[str, str] = {}
+    errors: list[str] = []
+    for loader in _akshare_symbol_loaders(ak, market):
+        try:
+            frame = _call_with_retries(loader, attempts=3)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if frame is None or frame.empty:
+            continue
+
+        code_column = _find_frame_column(frame.columns, ("code", "代码", "A股代码", "证券代码", "股票代码"))
+        name_column = _find_frame_column(frame.columns, ("name", "名称", "证券简称", "股票简称", "公司简称", "简称"))
+        if code_column is None or name_column is None:
+            errors.append("akshare symbol schema changed")
+            continue
+
+        for _, row in frame.iterrows():
+            code = normalize_symbol(str(row[code_column]))
+            name = str(row[name_column]).strip()
+            if not _is_a_share_symbol(code):
+                continue
+            if market != "all" and infer_a_share_market(code) != market:
+                continue
+            if not name or name.lower() in {"nan", "none"}:
+                continue
+            mapping[code] = name
+
+    if mapping:
+        return mapping
+    raise ProviderError("; ".join(errors) if errors else "akshare returned no symbol names")
+
+
+def _find_frame_column(columns, candidates: tuple[str, ...]) -> str | None:
+    available = {str(column).strip().lower(): str(column) for column in columns}
+    for candidate in candidates:
+        match = available.get(candidate.strip().lower())
+        if match is not None:
+            return match
+    return None
 
 
 def _format_iso_date(value: date | None) -> str:
