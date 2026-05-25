@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from kronos_mvp.models import Candle
+from kronos_mvp.providers import ProviderError
 from kronos_mvp.relative_strength import (
     RelativeStrengthStore,
     RelativeStrengthSyncService,
@@ -24,10 +25,11 @@ class _Mapping:
 class MemoryRelativeStrengthProvider:
     name = "memory"
 
-    def __init__(self):
+    def __init__(self, mapping_error: Exception | None = None):
         self.mapping_calls = 0
         self.index_calls: list[tuple[str, date | None]] = []
         self.industry_calls: list[tuple[str, date | None]] = []
+        self.mapping_error = mapping_error
 
     def fetch_index_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
         self.index_calls.append((symbol, start_date))
@@ -38,6 +40,8 @@ class MemoryRelativeStrengthProvider:
 
     def fetch_industry_mappings(self):
         self.mapping_calls += 1
+        if self.mapping_error is not None:
+            raise self.mapping_error
         return [_Mapping(symbol="600835", industry_name="家电行业")]
 
     def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
@@ -147,6 +151,31 @@ class RelativeStrengthSyncServiceTests(unittest.TestCase):
             self.assertEqual(provider.mapping_calls, 0)
             self.assertEqual(result.benchmark_labels, ("沪深300", "上证指数", "深证成指", "创业板指"))
             self.assertEqual(result.industry_names, ("家电行业",))
+
+    def test_sync_market_reuses_cached_mappings_when_refresh_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider(mapping_error=ProviderError("upstream closed connection"))
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("家电行业"),
+                        industry_name="家电行业",
+                        source="akshare",
+                        updated_at="2026-05-01T16:30:00+08:00",
+                    )
+                ]
+            )
+
+            result = service.sync_market(history_days=20)
+
+            self.assertEqual(result.mapping_rows, 0)
+            self.assertEqual(provider.mapping_calls, 1)
+            self.assertEqual(result.industry_names, ("家电行业",))
+            self.assertTrue(result.warnings)
+            self.assertIn("行业映射刷新失败", result.warnings[0])
 
 
 class RelativeStrengthAnalysisTests(unittest.TestCase):

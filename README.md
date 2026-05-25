@@ -17,6 +17,7 @@
 - GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并把 `data/candles.db` 上传到 VPS。
 - GitHub Actions 还可独立同步相对强弱缓存，并把 `data/relative_strength.db` 上传到 VPS。
 - GitHub Actions 还可独立在北京时间 18:09 同步资金面快照，写入独立 SQLite 缓存。
+- 相对强弱独立工作流当前默认在北京时间工作日 18:20 触发；若当天不是 A 股交易日，会在安装依赖后直接跳过同步和上传。
 - 推送到 GitHub main 后可自动把最新代码部署到 VPS，不覆盖 `data`、`.env` 和 `.venv`。
 
 ## 架构
@@ -114,13 +115,13 @@ python -m kronos_mvp.cli --fund-db data/fund_factors.db sync-funds --history-day
 如果你希望把“相对强弱”所需的指数、行业映射和行业 K 线也同步到本地缓存，可以执行：
 
 ```powershell
-python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative --history-days 60
+python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative --history-days 30
 ```
 
 如果只想为某几只股票补齐相对强弱依赖，也可以直接带股票代码：
 
 ```powershell
-python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 600835 600519 --history-days 60
+python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 600835 600519 --history-days 30
 ```
 
 `sync-relative` 会维护 `data/relative_strength.db`，其中包含：
@@ -130,6 +131,8 @@ python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 6
 - 用于行业相对强弱比较的行业板块日线缓存。
 
 全市场模式下，行业映射会优先复用现有缓存；只有映射缺失或超过 5 天未刷新时才会重新全量抓取。指数与行业 K 线仍按现有数据库中的最新日期做增量补齐。
+
+默认回补窗口现在是 30 天。因为相对强弱分析当前只使用 5 日和 20 日窗口，30 天缓存已经足够支撑日常结论，同时能降低空库或新库初始化时的同步耗时。
 
 详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。综合结论区现在还会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决分。
 

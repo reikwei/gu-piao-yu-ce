@@ -14,7 +14,7 @@ on:
       history_days:
         description: "History window to backfill when the relative strength cache is missing"
         required: false
-        default: "60"
+        default: "30"
   schedule:
     - cron: "20 10 * * 1-5"
 
@@ -41,7 +41,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.sync.txt
 
+      - name: Check A-share trading day
+        id: trade_day_guard
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          from kronos_mvp.funds import latest_a_share_trade_date
+
+          shanghai_today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+          latest_trade_date = latest_a_share_trade_date()
+          should_skip = shanghai_today != latest_trade_date
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"should_skip={'true' if should_skip else 'false'}\n")
+              fh.write(f"shanghai_today={shanghai_today.isoformat()}\n")
+              fh.write(f"latest_trade_date={latest_trade_date.isoformat()}\n")
+
+          summary = (
+              f"Relative strength schedule guard: today={shanghai_today.isoformat()}, "
+              f"latest_trade_date={latest_trade_date.isoformat()}, skip={should_skip}"
+          )
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("### Relative strength trading-day guard\n\n")
+              fh.write(f"- today: {shanghai_today.isoformat()}\n")
+              fh.write(f"- latest_trade_date: {latest_trade_date.isoformat()}\n")
+              fh.write(f"- skip_sync: {'true' if should_skip else 'false'}\n\n")
+          PY
+
       - name: Restore relative strength cache
+        if: ${{ github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.RELATIVE_DB_PATH }}
@@ -50,12 +83,13 @@ jobs:
             a-share-relative-${{ github.ref_name }}-
 
       - name: Sync relative strength cache
+        if: ${{ github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true' }}
         run: |
           mkdir -p data
           SYMBOLS="${{ github.event.inputs.symbols }}"
           HISTORY_DAYS="${{ github.event.inputs.history_days }}"
           if [ -z "${HISTORY_DAYS}" ]; then
-            HISTORY_DAYS="60"
+            HISTORY_DAYS="30"
           fi
 
           if [ -n "${SYMBOLS}" ]; then
@@ -65,7 +99,7 @@ jobs:
           fi
 
       - name: Upload relative strength cache artifact
-        if: always()
+        if: ${{ always() && (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') }}
         uses: actions/upload-artifact@v4
         with:
           name: relative-strength-db
@@ -74,14 +108,14 @@ jobs:
             data/relative_strength.db
 
       - name: Save relative strength cache
-        if: always()
+        if: ${{ always() && (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') }}
         uses: actions/cache/save@v4
         with:
           path: ${{ env.RELATIVE_DB_PATH }}
           key: a-share-relative-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload relative strength cache to VPS via password
-        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
+        if: ${{ (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') && env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN '))) }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.VPS_HOST }}
@@ -91,7 +125,7 @@ jobs:
           target: ${{ env.VPS_DATA_DIR }}
 
       - name: Upload relative strength cache to VPS via SSH key
-        if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
+        if: ${{ (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') && env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ') }}
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.VPS_HOST }}

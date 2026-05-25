@@ -8,11 +8,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .models import Candle
-from .providers import AkShareRelativeStrengthProvider, RelativeStrengthProvider
+from .providers import AkShareRelativeStrengthProvider, ProviderError, RelativeStrengthProvider
 from .storage import CandleStore, SHANGHAI_TZ, normalize_symbol
 
 
-DEFAULT_RELATIVE_HISTORY_DAYS = 60
+DEFAULT_RELATIVE_HISTORY_DAYS = 30
 _MAPPING_STALE_DAYS = 5
 
 
@@ -251,15 +251,18 @@ class RelativeStrengthSyncService:
 
     def sync_symbol(self, symbol: str, history_days: int = DEFAULT_RELATIVE_HISTORY_DAYS) -> RelativeStrengthSyncResult:
         normalized = normalize_symbol(symbol)
-        mapping_rows = 0
+        warnings: list[str] = []
         if self.store.mapping_is_stale() or self.store.get_symbol_industry(normalized) is None:
-            mapping_rows = self._sync_mappings()
+            mapping_rows, mapping_warning = self._refresh_mappings_or_reuse_cache([normalized])
+            if mapping_warning:
+                warnings.append(mapping_warning)
+        else:
+            mapping_rows = 0
 
         benchmark = benchmark_for_symbol(normalized)
         rows = self._sync_benchmark(benchmark, history_days=history_days)
         mapping = self.store.get_symbol_industry(normalized)
         industry_names: list[str] = []
-        warnings: list[str] = []
         if mapping is not None:
             rows += self._sync_industry(mapping.industry_name, history_days=history_days)
             industry_names.append(mapping.industry_name)
@@ -285,11 +288,17 @@ class RelativeStrengthSyncService:
         refresh_mappings = self.store.mapping_is_stale()
         if normalized_symbols and not refresh_mappings:
             refresh_mappings = any(self.store.get_symbol_industry(symbol) is None for symbol in normalized_symbols)
-        mapping_rows = self._sync_mappings() if refresh_mappings else 0
+        warnings: list[str] = []
+        if refresh_mappings:
+            mapping_rows, mapping_warning = self._refresh_mappings_or_reuse_cache(normalized_symbols or None)
+            if mapping_warning:
+                warnings.append(mapping_warning)
+        else:
+            mapping_rows = 0
 
         mappings = self.store.list_symbol_industries(normalized_symbols or None)
         mapped_symbols = {mapping.symbol for mapping in mappings}
-        warnings = [f"{symbol} 暂未匹配到行业映射" for symbol in normalized_symbols if symbol not in mapped_symbols]
+        warnings.extend(f"{symbol} 暂未匹配到行业映射" for symbol in normalized_symbols if symbol not in mapped_symbols)
 
         benchmark_labels: list[str] = []
         rows = 0
@@ -329,6 +338,14 @@ class RelativeStrengthSyncService:
             for item in self.provider.fetch_industry_mappings()
         ]
         return self.store.upsert_symbol_industries(mappings)
+
+    def _refresh_mappings_or_reuse_cache(self, symbols: list[str] | None) -> tuple[int, str | None]:
+        try:
+            return self._sync_mappings(), None
+        except ProviderError as exc:
+            if self.store.list_symbol_industries(symbols or None):
+                return 0, f"行业映射刷新失败，已回退到缓存：{exc}"
+            raise
 
     def _sync_benchmark(self, benchmark: RelativeBenchmark, history_days: int) -> int:
         start_date = _sync_start_date(self.store.get_latest_date(benchmark.key), history_days)
