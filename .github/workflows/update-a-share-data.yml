@@ -42,6 +42,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.sync.txt
+      - name: Restore merged SQLite cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.KLINE_DB_PATH }}
+          key: a-share-merged-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            a-share-merged-${{ github.ref_name }}-
+      - name: Require merged SQLite baseline
+        run: |
+          if [ ! -f "${KLINE_DB_PATH}" ]; then
+            echo "Selected-symbol sync requires a cached merged candles.db baseline to avoid overwriting VPS with a partial database."
+            exit 1
+          fi
       - name: Sync data
         run: |
           SYMBOLS="${{ github.event.inputs.symbols }}"
@@ -50,6 +63,12 @@ jobs:
             FULL_REFRESH_FLAG="--full-refresh"
           fi
           python -m kronos_mvp.cli sync $SYMBOLS ${FULL_REFRESH_FLAG}
+      - name: Save merged SQLite cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.KLINE_DB_PATH }}
+          key: a-share-merged-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
         uses: appleboy/scp-action@v0.1.7
@@ -442,6 +461,12 @@ jobs:
           if-no-files-found: ignore
           path: |
             data/candles.db
+      - name: Save merged SQLite cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/candles.db
+          key: a-share-merged-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload merged SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
         uses: appleboy/scp-action@v0.1.7
