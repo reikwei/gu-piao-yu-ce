@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from kronos_mvp.funds import (
     FundFactor,
@@ -101,7 +102,7 @@ class FundFactorSyncServiceTests(unittest.TestCase):
                 ],
             )
 
-            with unittest.mock.patch(
+            with patch(
                 "kronos_mvp.funds.recent_a_share_trade_dates",
                 return_value=[date(2026, 5, 21), date(2026, 5, 22), date(2026, 5, 23)],
             ):
@@ -160,6 +161,26 @@ class FundAnalysisTests(unittest.TestCase):
         self.assertEqual(analysis["trendProfile"]["label"], "单日异动")
         self.assertEqual(analysis["flowMetrics"]["consecutiveInflowDays"], 1)
         self.assertIn("单日异动", analysis["summary"])
+
+    def test_build_fund_analysis_uses_recent_available_margin_samples_when_latest_day_missing(self):
+        analysis = build_fund_analysis(
+            [
+                FundFactor(symbol="600835", trade_date=date(2026, 5, 19), fund_net_inflow=-3.0e7, fund_net_inflow_ratio=-0.8, margin_balance=10.20e8, margin_buy_amount=5.0e7),
+                FundFactor(symbol="600835", trade_date=date(2026, 5, 20), fund_net_inflow=-4.0e7, fund_net_inflow_ratio=-1.1, margin_balance=10.30e8, margin_buy_amount=5.2e7),
+                FundFactor(symbol="600835", trade_date=date(2026, 5, 21), fund_net_inflow=-5.0e7, fund_net_inflow_ratio=-1.4, margin_balance=10.45e8, margin_buy_amount=5.4e7),
+                FundFactor(symbol="600835", trade_date=date(2026, 5, 22), fund_net_inflow=-6.0e7, fund_net_inflow_ratio=-1.8, margin_balance=10.58e8, margin_buy_amount=5.5e7),
+                FundFactor(symbol="600835", trade_date=date(2026, 5, 23), fund_net_inflow=-7.0e7, fund_net_inflow_ratio=-2.2, margin_balance=None, margin_buy_amount=None),
+            ]
+        )
+
+        self.assertIsNotNone(analysis["marginMetrics"]["balanceSlope3d"])
+        self.assertTrue(analysis["marginMetrics"]["usesFallbackWindow"])
+        self.assertEqual(analysis["marginMetrics"]["latestTradeDate"], "2026-05-22")
+        self.assertEqual(analysis["marginMetrics"]["sampleDates3d"], ["2026-05-20", "2026-05-21", "2026-05-22"])
+        component = next(item for item in analysis["components"] if item["label"] == "融资余额 3 日趋势")
+        self.assertNotEqual(component["verdict"], "样本不足")
+        self.assertIn("最近可用融资样本", component["detail"])
+        self.assertIn("最近可用融资样本", analysis["summary"])
 
 
 if __name__ == "__main__":

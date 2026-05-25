@@ -349,6 +349,29 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual(result[0].date, date(2026, 5, 23))
         self.assertEqual(result[0].close, 3235.0)
 
+    def test_akshare_hist_parses_turnover_rate(self):
+        fake_ak = SimpleNamespace(
+            stock_zh_a_hist=lambda symbol, period, start_date, end_date, adjust: pd.DataFrame(
+                {
+                    "日期": ["2026-05-22"],
+                    "开盘": [10.0],
+                    "最高": [10.5],
+                    "最低": [9.8],
+                    "收盘": [10.2],
+                    "成交量": [1000],
+                    "成交额": [10200],
+                    "换手率": [2.35],
+                }
+            ),
+            stock_zh_a_daily=lambda *args, **kwargs: pd.DataFrame(),
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            rows = AkShareDailyProvider().fetch_daily("600519", start_date=date(2026, 5, 1))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].turnover, 2.35)
+
     def test_baostock_daily_fetch_reuses_login_session(self):
         class FakeLoginResult:
             error_code = "0"
@@ -359,7 +382,7 @@ class ProviderDailyFetchTests(unittest.TestCase):
             error_msg = ""
 
             def __init__(self):
-                self.rows = [["2026-05-22", "10", "11", "9", "10.5", "1000", "10500"]]
+                self.rows = [["2026-05-22", "10", "11", "9", "10.5", "1000", "10500", "1.82"]]
                 self.index = -1
 
             def next(self):

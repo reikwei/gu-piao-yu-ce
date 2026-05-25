@@ -47,10 +47,12 @@ class CandleStore:
                     close REAL NOT NULL,
                     volume REAL NOT NULL,
                     amount REAL,
+                    turnover REAL,
                     PRIMARY KEY (symbol, date)
                 )
                 """
             )
+            self._ensure_column(conn, "candles", "turnover", "REAL")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_candles_symbol_date ON candles(symbol, date)")
             conn.execute(
                 """
@@ -76,21 +78,23 @@ class CandleStore:
                 candle.close,
                 candle.volume,
                 candle.amount,
+                candle.turnover,
             )
             for candle in candles
         ]
         with self._connection() as conn:
             conn.executemany(
                 """
-                INSERT INTO candles(symbol, date, open, high, low, close, volume, amount)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO candles(symbol, date, open, high, low, close, volume, amount, turnover)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, date) DO UPDATE SET
                     open = excluded.open,
                     high = excluded.high,
                     low = excluded.low,
                     close = excluded.close,
                     volume = excluded.volume,
-                    amount = excluded.amount
+                    amount = excluded.amount,
+                    turnover = excluded.turnover
                 """,
                 rows,
             )
@@ -104,7 +108,7 @@ class CandleStore:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT date, open, high, low, close, volume, amount
+                SELECT date, open, high, low, close, volume, amount, turnover
                 FROM candles
                 WHERE symbol = ?
                 ORDER BY date DESC
@@ -163,10 +167,11 @@ class CandleStore:
                     return 0
 
                 total = conn.execute("SELECT COUNT(*) AS total FROM source_db.candles").fetchone()["total"]
+                source_turnover = "turnover" if _table_has_column(conn, "source_db", "candles", "turnover") else "NULL"
                 conn.execute(
-                    """
-                    INSERT OR REPLACE INTO candles(symbol, date, open, high, low, close, volume, amount)
-                    SELECT symbol, date, open, high, low, close, volume, amount
+                    f"""
+                    INSERT OR REPLACE INTO candles(symbol, date, open, high, low, close, volume, amount, turnover)
+                    SELECT symbol, date, open, high, low, close, volume, amount, {source_turnover}
                     FROM source_db.candles
                     """
                 )
@@ -187,6 +192,11 @@ class CandleStore:
             (_SYNC_METADATA_KEY, timestamp),
         )
 
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
 
 def normalize_symbol(symbol: str) -> str:
     return symbol.strip().lower().replace("sh.", "").replace("sz.", "").replace("bj.", "")
@@ -201,4 +211,10 @@ def _row_to_candle(row: sqlite3.Row) -> Candle:
         close=float(row["close"]),
         volume=float(row["volume"]),
         amount=None if row["amount"] is None else float(row["amount"]),
+        turnover=None if row["turnover"] is None else float(row["turnover"]),
     )
+
+
+def _table_has_column(conn: sqlite3.Connection, schema: str, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA {schema}.table_info({table})").fetchall()
+    return any(str(row[1]) == column for row in rows)

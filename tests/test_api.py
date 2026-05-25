@@ -16,8 +16,8 @@ from kronos_mvp.relative_strength import RelativeStrengthStore, SymbolIndustry, 
 
 def _sample_candles() -> list[Candle]:
     return [
-        Candle(date=date(2026, 5, 21), open=10, high=11, low=9, close=10.5, volume=100, amount=1000),
-        Candle(date=date(2026, 5, 22), open=10.5, high=11.5, low=10, close=11, volume=110, amount=1210),
+        Candle(date=date(2026, 5, 21), open=10, high=11, low=9, close=10.5, volume=100, amount=1000, turnover=1.1),
+        Candle(date=date(2026, 5, 22), open=10.5, high=11.5, low=10, close=11, volume=110, amount=1210, turnover=1.2),
     ]
 
 
@@ -36,31 +36,31 @@ def _sample_prediction_result() -> PredictionResult:
 
 def _sample_price_volume_confirmed_candles() -> list[Candle]:
     return [
-        Candle(date=date(2026, 5, 12), open=10.00, high=10.18, low=9.96, close=10.12, volume=100, amount=1012),
-        Candle(date=date(2026, 5, 13), open=10.10, high=10.26, low=10.02, close=10.21, volume=104, amount=1062),
-        Candle(date=date(2026, 5, 14), open=10.20, high=10.34, low=10.08, close=10.30, volume=108, amount=1112),
-        Candle(date=date(2026, 5, 15), open=10.28, high=10.42, low=10.16, close=10.38, volume=112, amount=1163),
-        Candle(date=date(2026, 5, 16), open=10.36, high=10.50, low=10.24, close=10.47, volume=116, amount=1215),
-        Candle(date=date(2026, 5, 19), open=10.46, high=10.63, low=10.34, close=10.58, volume=120, amount=1269),
-        Candle(date=date(2026, 5, 20), open=10.56, high=10.76, low=10.48, close=10.70, volume=126, amount=1348),
-        Candle(date=date(2026, 5, 21), open=10.68, high=10.88, low=10.60, close=10.82, volume=132, amount=1428),
-        Candle(date=date(2026, 5, 22), open=10.80, high=11.02, low=10.72, close=10.95, volume=138, amount=1511),
-        Candle(date=date(2026, 5, 23), open=10.98, high=11.46, low=10.94, close=11.38, volume=230, amount=2617),
+        Candle(date=date(2026, 5, 12), open=10.00, high=10.18, low=9.96, close=10.12, volume=100, amount=1012, turnover=0.82),
+        Candle(date=date(2026, 5, 13), open=10.10, high=10.26, low=10.02, close=10.21, volume=104, amount=1062, turnover=0.84),
+        Candle(date=date(2026, 5, 14), open=10.20, high=10.34, low=10.08, close=10.30, volume=108, amount=1112, turnover=0.86),
+        Candle(date=date(2026, 5, 15), open=10.28, high=10.42, low=10.16, close=10.38, volume=112, amount=1163, turnover=0.89),
+        Candle(date=date(2026, 5, 16), open=10.36, high=10.50, low=10.24, close=10.47, volume=116, amount=1215, turnover=0.93),
+        Candle(date=date(2026, 5, 19), open=10.46, high=10.63, low=10.34, close=10.58, volume=120, amount=1269, turnover=0.97),
+        Candle(date=date(2026, 5, 20), open=10.56, high=10.76, low=10.48, close=10.70, volume=126, amount=1348, turnover=1.01),
+        Candle(date=date(2026, 5, 21), open=10.68, high=10.88, low=10.60, close=10.82, volume=132, amount=1428, turnover=1.05),
+        Candle(date=date(2026, 5, 22), open=10.80, high=11.02, low=10.72, close=10.95, volume=138, amount=1511, turnover=1.10),
+        Candle(date=date(2026, 5, 23), open=10.98, high=11.46, low=10.94, close=11.38, volume=230, amount=2617, turnover=1.92),
     ]
 
 
 def _sample_price_volume_weak_candles() -> list[Candle]:
     return [
-        Candle(date=date(2026, 5, 12), open=11.80, high=11.88, low=11.62, close=11.70, volume=118, amount=1381),
-        Candle(date=date(2026, 5, 13), open=11.72, high=11.78, low=11.48, close=11.56, volume=120, amount=1387),
-        Candle(date=date(2026, 5, 14), open=11.58, high=11.64, low=11.32, close=11.40, volume=122, amount=1391),
-        Candle(date=date(2026, 5, 15), open=11.42, high=11.48, low=11.18, close=11.28, volume=124, amount=1399),
-        Candle(date=date(2026, 5, 16), open=11.30, high=11.36, low=11.02, close=11.10, volume=126, amount=1399),
-        Candle(date=date(2026, 5, 19), open=11.08, high=11.14, low=10.84, close=10.96, volume=128, amount=1402),
-        Candle(date=date(2026, 5, 20), open=10.98, high=11.02, low=10.72, close=10.82, volume=130, amount=1407),
-        Candle(date=date(2026, 5, 21), open=10.84, high=10.90, low=10.58, close=10.70, volume=132, amount=1412),
-        Candle(date=date(2026, 5, 22), open=10.72, high=10.78, low=10.46, close=10.56, volume=134, amount=1415),
-        Candle(date=date(2026, 5, 23), open=10.54, high=10.58, low=10.02, close=10.08, volume=228, amount=1296),
+        Candle(date=date(2026, 5, 12), open=11.80, high=11.88, low=11.62, close=11.70, volume=118, amount=1381, turnover=1.46),
+        Candle(date=date(2026, 5, 13), open=11.72, high=11.78, low=11.48, close=11.56, volume=120, amount=1387, turnover=1.42),
+        Candle(date=date(2026, 5, 14), open=11.58, high=11.64, low=11.32, close=11.40, volume=122, amount=1391, turnover=1.38),
+        Candle(date=date(2026, 5, 15), open=11.42, high=11.48, low=11.18, close=11.28, volume=124, amount=1399, turnover=1.33),
+        Candle(date=date(2026, 5, 16), open=11.30, high=11.36, low=11.02, close=11.10, volume=126, amount=1399, turnover=1.28),
+        Candle(date=date(2026, 5, 19), open=11.08, high=11.14, low=10.84, close=10.96, volume=128, amount=1402, turnover=1.24),
+        Candle(date=date(2026, 5, 20), open=10.98, high=11.02, low=10.72, close=10.82, volume=130, amount=1407, turnover=1.20),
+        Candle(date=date(2026, 5, 21), open=10.84, high=10.90, low=10.58, close=10.70, volume=132, amount=1412, turnover=1.16),
+        Candle(date=date(2026, 5, 22), open=10.72, high=10.78, low=10.46, close=10.56, volume=134, amount=1415, turnover=1.12),
+        Candle(date=date(2026, 5, 23), open=10.54, high=10.58, low=10.02, close=10.08, volume=228, amount=1296, turnover=0.78),
     ]
 
 
@@ -549,6 +549,8 @@ class ApiTests(unittest.TestCase):
         self.assertGreaterEqual(confirmation["score"], 65)
         self.assertTrue(confirmation["metrics"]["isBreakout"])
         self.assertGreater(confirmation["metrics"]["volumeRatio5"], 1.2)
+        self.assertGreater(confirmation["metrics"]["amountRatio5"], 1.4)
+        self.assertGreater(confirmation["metrics"]["turnoverRatio5"], 1.4)
 
     def test_build_prediction_analysis_flags_bearish_price_volume_confirmation(self):
         bearish_result = PredictionResult(
@@ -568,6 +570,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(confirmation["signal"], "bearish")
         self.assertLessEqual(confirmation["score"], 35)
         self.assertTrue(confirmation["metrics"]["isBreakdown"])
+        self.assertLess(confirmation["metrics"]["turnoverRatio5"], 0.8)
 
     def test_fund_analysis_endpoint_returns_scored_summary(self):
         fund_store = FakeFundStore(factors=_sample_fund_factors())

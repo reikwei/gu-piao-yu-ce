@@ -525,9 +525,14 @@ def build_fund_analysis(factors: list[FundFactor]) -> dict[str, object]:
         "netInflow10d": _rolling_sum(ordered, "fund_net_inflow", 10),
         "consecutiveInflowDays": _count_consecutive_flow_days(ordered, direction="inflow"),
     }
+    latest_available_margin = _latest_available_factor(ordered, "margin_balance")
+    margin_sample_dates = _recent_available_trade_dates(ordered, "margin_balance", 3)
     margin_metrics = {
-        "balanceSlope3d": _slope_ratio(ordered, "margin_balance", 3),
-        "balanceAcceleration3d": _acceleration_ratio(ordered, "margin_balance", 3),
+        "balanceSlope3d": _slope_ratio(ordered, "margin_balance", 3, allow_gaps=True),
+        "balanceAcceleration3d": _acceleration_ratio(ordered, "margin_balance", 3, allow_gaps=True),
+        "latestTradeDate": latest_available_margin.trade_date.isoformat() if latest_available_margin is not None else None,
+        "sampleDates3d": [value.isoformat() for value in margin_sample_dates],
+        "usesFallbackWindow": bool(latest_available_margin is not None and latest_available_margin.trade_date != latest.trade_date),
     }
     trend_profile = _classify_trend_profile(ordered, flow_metrics, margin_metrics)
 
@@ -736,6 +741,8 @@ def _build_fund_summary(
     margin_part = "融资余额 3 日趋势待补充"
     if margin_slope is not None:
         margin_part = "融资余额 3 日斜率向上" if float(margin_slope) > 0 else "融资余额 3 日斜率向下"
+        if margin_metrics.get("usesFallbackWindow"):
+            margin_part = f"{margin_part}（按最近可用融资样本计算）"
     elif previous is not None and latest.margin_balance is not None:
         margin_part = "融资余额有值，但 3 日斜率样本还不够"
 
@@ -779,20 +786,50 @@ def _count_consecutive_flow_days(factors: list[FundFactor], direction: str = "in
     return count
 
 
-def _slope_ratio(factors: list[FundFactor], field: str, length: int) -> float | None:
-    values = _recent_values(factors, field, length)
+def _slope_ratio(factors: list[FundFactor], field: str, length: int, allow_gaps: bool = False) -> float | None:
+    values = _recent_available_values(factors, field, length) if allow_gaps else _recent_values(factors, field, length)
     if values is None or values[0] == 0:
         return None
     return round((values[-1] - values[0]) / abs(values[0]), 6)
 
 
-def _acceleration_ratio(factors: list[FundFactor], field: str, length: int) -> float | None:
-    values = _recent_values(factors, field, length)
+def _acceleration_ratio(factors: list[FundFactor], field: str, length: int, allow_gaps: bool = False) -> float | None:
+    values = _recent_available_values(factors, field, length) if allow_gaps else _recent_values(factors, field, length)
     if values is None or len(values) < 3 or values[0] == 0 or values[1] == 0:
         return None
     first_leg = (values[1] - values[0]) / abs(values[0])
     second_leg = (values[2] - values[1]) / abs(values[1])
     return round(second_leg - first_leg, 6)
+
+
+def _recent_available_values(factors: list[FundFactor], field: str, length: int) -> list[float] | None:
+    selected: list[float] = []
+    for item in reversed(factors):
+        value = getattr(item, field)
+        if value is None:
+            continue
+        selected.append(float(value))
+        if len(selected) == length:
+            return list(reversed(selected))
+    return None
+
+
+def _recent_available_trade_dates(factors: list[FundFactor], field: str, length: int) -> list[date]:
+    selected: list[date] = []
+    for item in reversed(factors):
+        if getattr(item, field) is None:
+            continue
+        selected.append(item.trade_date)
+        if len(selected) == length:
+            return list(reversed(selected))
+    return list(reversed(selected))
+
+
+def _latest_available_factor(factors: list[FundFactor], field: str) -> FundFactor | None:
+    for item in reversed(factors):
+        if getattr(item, field) is not None:
+            return item
+    return None
 
 
 def _cumulative_flow_component(flow_metrics: dict[str, object]) -> dict[str, object]:
@@ -883,6 +920,13 @@ def _margin_trend_component(margin_metrics: dict[str, object]) -> dict[str, obje
 
     slope_value = float(slope)
     acceleration_value = float(acceleration or 0)
+    suffix = ""
+    if margin_metrics.get("usesFallbackWindow"):
+        sample_dates = margin_metrics.get("sampleDates3d") or []
+        if isinstance(sample_dates, list) and sample_dates:
+            suffix = f"按最近可用融资样本（{' / '.join(str(value) for value in sample_dates)}）计算。"
+        else:
+            suffix = "按最近可用融资样本计算。"
     if slope_value >= 0.02 and acceleration_value >= 0:
         score, verdict = 25, "融资趋势明显增强"
     elif slope_value > 0:
@@ -898,7 +942,7 @@ def _margin_trend_component(margin_metrics: dict[str, object]) -> dict[str, obje
         "label": "融资余额 3 日趋势",
         "score": score,
         "verdict": verdict,
-        "detail": f"{verdict}。3 日斜率 {_format_ratio_percent(slope_value)}，加速度 {_format_ratio_percent(acceleration_value)}。",
+        "detail": f"{verdict}。3 日斜率 {_format_ratio_percent(slope_value)}，加速度 {_format_ratio_percent(acceleration_value)}。{suffix}",
     }
 
 

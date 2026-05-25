@@ -273,7 +273,7 @@ class BaoStockDailyProvider:
         bs = self._ensure_login()
         result = bs.query_history_k_data_plus(
             code,
-            "date,open,high,low,close,volume,amount",
+            "date,open,high,low,close,volume,amount,turn",
             start_date=_format_iso_date(start_date),
             end_date="",
             frequency="d",
@@ -298,6 +298,7 @@ class BaoStockDailyProvider:
                 close=float(row[4]),
                 volume=float(row[5] or 0),
                 amount=float(row[6] or 0),
+                turnover=_optional_float(row[7]) if len(row) > 7 else None,
             )
             for row in rows
         ]
@@ -336,6 +337,7 @@ class TuShareDailyProvider:
                 close=float(row["close"]),
                 volume=float(row["vol"]),
                 amount=float(row["amount"]),
+                turnover=None,
             )
             for _, row in frame.iterrows()
         ]
@@ -536,6 +538,7 @@ def _build_candles_from_akshare_ohlc(frame, start_date: date | None = None) -> l
     close_column = _find_frame_column(frame.columns, ("收盘", "close"))
     volume_column = _find_frame_column(frame.columns, ("成交量", "volume"))
     amount_column = _find_frame_column(frame.columns, ("成交额", "amount"))
+    turnover_column = _find_frame_column(frame.columns, ("换手率", "turnover", "turn", "换手"))
 
     missing = [
         name
@@ -571,6 +574,7 @@ def _build_candles_from_akshare_ohlc(frame, start_date: date | None = None) -> l
                     close=float(row[close_column]),
                     volume=float(row[volume_column]),
                     amount=_optional_float(row[amount_column]) if amount_column is not None else None,
+                    turnover=_optional_float(row[turnover_column]) if turnover_column is not None else None,
                 )
             )
         except KeyError as exc:
@@ -579,6 +583,7 @@ def _build_candles_from_akshare_ohlc(frame, start_date: date | None = None) -> l
 
 
 def _build_candles_from_akshare_sina(frame) -> list[Candle]:
+    turnover_column = _find_frame_column(frame.columns, ("换手率", "turnover", "turn", "换手"))
     candles: list[Candle] = []
     for _, row in frame.iterrows():
         try:
@@ -591,6 +596,7 @@ def _build_candles_from_akshare_sina(frame) -> list[Candle]:
                     close=float(row["close"]),
                     volume=float(row["volume"]),
                     amount=float(row["amount"]) if "amount" in row and row["amount"] is not None else None,
+                    turnover=_optional_float(row[turnover_column]) if turnover_column is not None else None,
                 )
             )
         except KeyError as exc:

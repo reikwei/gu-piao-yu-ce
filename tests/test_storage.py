@@ -14,9 +14,9 @@ class CandleStoreTests(unittest.TestCase):
             store.upsert_many(
                 "600519",
                 [
-                    Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100),
-                    Candle(date=date(2026, 5, 21), open=11, high=13, low=10, close=12, volume=120, amount=1440),
-                    Candle(date=date(2026, 5, 19), open=9, high=11, low=8, close=10, volume=90, amount=900),
+                    Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100, turnover=1.1),
+                    Candle(date=date(2026, 5, 21), open=11, high=13, low=10, close=12, volume=120, amount=1440, turnover=1.3),
+                    Candle(date=date(2026, 5, 19), open=9, high=11, low=8, close=10, volume=90, amount=900, turnover=0.9),
                 ],
             )
 
@@ -24,6 +24,7 @@ class CandleStoreTests(unittest.TestCase):
 
             self.assertEqual([c.date for c in candles], [date(2026, 5, 20), date(2026, 5, 21)])
             self.assertEqual(candles[-1].close, 12)
+            self.assertEqual(candles[-1].turnover, 1.3)
 
     def test_upsert_replaces_existing_symbol_date(self):
         with tempfile.TemporaryDirectory() as tmp:

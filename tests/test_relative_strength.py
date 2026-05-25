@@ -253,6 +253,33 @@ class RelativeStrengthAnalysisTests(unittest.TestCase):
         self.assertEqual(analysis["signal"], "bullish")
         self.assertGreaterEqual(int(analysis["score"]), 65)
         self.assertIn("相对强弱：相对偏强", str(analysis["detail"]))
+        self.assertIn("近 5 日相对所属行业超额", str(analysis["detail"]))
+        self.assertEqual(analysis["metrics"]["coverage"], "full")
+
+    def test_build_relative_strength_analysis_marks_benchmark_only_scope_as_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("家电行业"),
+                        industry_name="家电行业",
+                        source="akshare",
+                        updated_at="2026-05-25T16:30:00+08:00",
+                    )
+                ]
+            )
+            store.upsert_candles("benchmark:sh", _sample_reference_candles(10.0, 0.08))
+
+            analysis = build_relative_strength_analysis("600835", _sample_stock_candles(), store)
+
+        self.assertTrue(analysis["available"])
+        self.assertEqual(analysis["signal"], "bullish")
+        self.assertEqual(analysis["metrics"]["coverage"], "benchmark-only")
+        self.assertFalse(bool(analysis["metrics"]["industryAvailable"]))
+        self.assertLess(int(analysis["score"]), int(analysis["rawScore"]))
+        self.assertIn("行业侧待补齐", str(analysis["detail"]))
 
 
 if __name__ == "__main__":

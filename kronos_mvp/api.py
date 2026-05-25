@@ -691,11 +691,15 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
     last_low = float(last_candle.low)
     last_close = float(last_candle.close)
     last_volume = float(last_candle.volume or 0.0)
+    last_amount = _optional_metric(getattr(last_candle, "amount", None))
+    last_turnover = _optional_metric(getattr(last_candle, "turnover", None))
 
     closes = [float(candle.close) for candle in candles]
     highs = [float(candle.high) for candle in candles]
     lows = [float(candle.low) for candle in candles]
     volumes = [float(getattr(candle, "volume", 0.0) or 0.0) for candle in candles]
+    amounts = [_optional_metric(getattr(candle, "amount", None)) for candle in candles]
+    turnovers = [_optional_metric(getattr(candle, "turnover", None)) for candle in candles]
 
     previous_close = closes[-2] if len(closes) >= 2 else None
     previous_high = max(highs[:-1]) if len(highs) >= 2 else None
@@ -705,6 +709,10 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
     ma20 = _window_average(closes, 20)
     volume_ratio5 = _volume_ratio(volumes, 5)
     volume_ratio10 = _volume_ratio(volumes, 10)
+    amount_ratio5 = _series_ratio(amounts, 5)
+    amount_ratio10 = _series_ratio(amounts, 10)
+    turnover_ratio5 = _series_ratio(turnovers, 5)
+    turnover_ratio10 = _series_ratio(turnovers, 10)
     close_position = _close_position(last_low, last_high, last_close)
     body_ratio = _body_ratio(last_open, last_close, last_low, last_high)
 
@@ -714,7 +722,19 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
         {"ma5": ma5, "ma10": ma10, "ma20": ma20},
     )
     breakout_component = _price_breakout_component(last_close, previous_high, previous_low)
-    volume_component = _price_volume_component(last_open, last_close, last_volume, volume_ratio5, volume_ratio10)
+    volume_component = _price_volume_component(
+        last_open,
+        last_close,
+        last_volume,
+        last_amount,
+        last_turnover,
+        volume_ratio5,
+        volume_ratio10,
+        amount_ratio5,
+        amount_ratio10,
+        turnover_ratio5,
+        turnover_ratio10,
+    )
     structure_component = _candle_structure_component(last_open, last_close, last_low, last_high)
     components = [trend_component, breakout_component, volume_component, structure_component]
 
@@ -725,6 +745,11 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
         close_position,
         volume_ratio5,
         volume_ratio10,
+        amount_ratio5,
+        amount_ratio10,
+        last_turnover,
+        turnover_ratio5,
+        turnover_ratio10,
         trend_component,
         breakout_component,
         volume_component,
@@ -743,6 +768,11 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
             "ma20": ma20,
             "volumeRatio5": volume_ratio5,
             "volumeRatio10": volume_ratio10,
+            "amountRatio5": amount_ratio5,
+            "amountRatio10": amount_ratio10,
+            "turnoverRate": last_turnover,
+            "turnoverRatio5": turnover_ratio5,
+            "turnoverRatio10": turnover_ratio10,
             "closePosition": close_position,
             "bodyRatio": body_ratio,
             "breakoutHigh": previous_high,
@@ -750,6 +780,7 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
             "isBreakout": previous_high is not None and last_close > previous_high,
             "isBreakdown": previous_low is not None and last_close < previous_low,
             "lastVolume": last_volume,
+            "lastAmount": last_amount,
         },
     }
 
@@ -833,11 +864,20 @@ def _price_volume_component(
     last_open: float,
     last_close: float,
     last_volume: float,
+    last_amount: float | None,
+    last_turnover: float | None,
     volume_ratio5: float | None,
     volume_ratio10: float | None,
+    amount_ratio5: float | None,
+    amount_ratio10: float | None,
+    turnover_ratio5: float | None,
+    turnover_ratio10: float | None,
 ) -> dict[str, object]:
-    reference_ratio = volume_ratio5 if volume_ratio5 is not None else volume_ratio10
-    if reference_ratio is None or last_volume <= 0:
+    volume_reference = volume_ratio5 if volume_ratio5 is not None else volume_ratio10
+    amount_reference = amount_ratio5 if amount_ratio5 is not None else amount_ratio10
+    turnover_reference = turnover_ratio5 if turnover_ratio5 is not None else turnover_ratio10
+    available_references = [value for value in (volume_reference, amount_reference, turnover_reference) if value is not None]
+    if not available_references and last_volume <= 0 and last_amount is None and last_turnover is None:
         return {
             "label": "量能确认",
             "score": 12,
@@ -845,16 +885,32 @@ def _price_volume_component(
             "detail": "成交量样本不足，暂不据此强化方向。",
         }
 
-    if reference_ratio >= 1.5 and last_close >= last_open:
-        score, verdict = 25, "放量上行"
-    elif reference_ratio >= 1.15 and last_close >= last_open:
-        score, verdict = 18, "温和放量"
-    elif reference_ratio >= 0.85:
-        score, verdict = 12, "量能基本持平"
-    elif reference_ratio >= 0.65:
+    positive_signals = 0
+    negative_signals = 0
+    for value, strong_threshold, weak_threshold in (
+        (volume_reference, 1.15, 0.85),
+        (amount_reference, 1.12, 0.88),
+        (turnover_reference, 1.05, 0.85),
+    ):
+        if value is None:
+            continue
+        if value >= strong_threshold:
+            positive_signals += 1
+        elif value < weak_threshold:
+            negative_signals += 1
+
+    if last_close >= last_open and positive_signals >= 2 and negative_signals == 0:
+        score, verdict = 25, "量价换手齐升"
+    elif last_close >= last_open and positive_signals >= 1 and negative_signals == 0:
+        score, verdict = 18, "量价配合偏强"
+    elif negative_signals >= 2 and last_close < last_open:
+        score, verdict = 0, "量价走弱"
+    elif negative_signals >= 2:
+        score, verdict = 6, "量价背离"
+    elif negative_signals >= 1:
         score, verdict = 6, "量能偏弱"
     else:
-        score, verdict = 0, "明显缩量"
+        score, verdict = 12, "量能基本持平"
 
     return {
         "label": "量能确认",
@@ -891,6 +947,11 @@ def _build_price_volume_detail(
     close_position: float,
     volume_ratio5: float | None,
     volume_ratio10: float | None,
+    amount_ratio5: float | None,
+    amount_ratio10: float | None,
+    last_turnover: float | None,
+    turnover_ratio5: float | None,
+    turnover_ratio10: float | None,
     trend_component: dict[str, object],
     breakout_component: dict[str, object],
     volume_component: dict[str, object],
@@ -903,9 +964,26 @@ def _build_price_volume_detail(
     else:
         volume_text = "量能样本暂不足"
 
+    if amount_ratio5 is not None:
+        amount_text = f"成交额约为近 5 日均额的 {amount_ratio5:.2f} 倍"
+    elif amount_ratio10 is not None:
+        amount_text = f"成交额约为近 10 日均额的 {amount_ratio10:.2f} 倍"
+    else:
+        amount_text = "成交额样本暂不足"
+
+    if turnover_ratio5 is not None:
+        turnover_text = f"换手率约为近 5 日均换手的 {turnover_ratio5:.2f} 倍"
+    elif turnover_ratio10 is not None:
+        turnover_text = f"换手率约为近 10 日均换手的 {turnover_ratio10:.2f} 倍"
+    elif last_turnover is not None:
+        turnover_text = f"最新换手率 {last_turnover:.2f}%"
+    else:
+        turnover_text = "换手率样本暂不足"
+
     return (
         f"价量确认：{signal_label}。"
         f"{trend_component['verdict']}；{breakout_component['verdict']}；{volume_component['verdict']}，{volume_text}；"
+        f"{amount_text}；{turnover_text}；"
         f"{structure_component['verdict']}，收盘位于当日振幅的 {close_position * 100:.0f}% 附近。"
     )
 
@@ -918,16 +996,30 @@ def _window_average(values: list[float], window: int) -> float | None:
 
 
 def _volume_ratio(volumes: list[float], window: int) -> float | None:
-    if len(volumes) <= 1 or window <= 0:
+    return _series_ratio([float(value) for value in volumes], window)
+
+
+def _series_ratio(values: list[float | None], window: int) -> float | None:
+    if len(values) <= 1 or window <= 0:
         return None
-    previous_values = volumes[:-1]
-    sample = previous_values[-window:]
+    current = values[-1]
+    if current is None or current <= 0:
+        return None
+    previous_values = values[:-1]
+    sample = [value for value in previous_values[-window:] if value is not None and value > 0]
     if not sample:
         return None
     baseline = sum(sample) / len(sample)
     if baseline <= 0:
         return None
-    return volumes[-1] / baseline
+    return current / baseline
+
+
+def _optional_metric(value: object) -> float | None:
+    if value is None:
+        return None
+    numeric = float(value)
+    return numeric if numeric == numeric else None
 
 
 def _close_position(low: float, high: float, close: float) -> float:

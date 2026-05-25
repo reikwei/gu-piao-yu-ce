@@ -435,12 +435,19 @@ def build_relative_strength_analysis(
             industry_name=mapping.industry_name if mapping is not None else None,
         )
 
-    score = int(round(sum(int(component["score"]) for component in components) / (len(components) * 25) * 100))
+    benchmark_components = [component for component in components if component.get("scope") == "benchmark"]
+    industry_components = [component for component in components if component.get("scope") == "industry"]
+    raw_score = int(round(sum(int(component["score"]) for component in components) / (len(components) * 25) * 100))
+    score = _adjust_relative_strength_score(raw_score, benchmark_components, industry_components)
+    metrics["benchmarkAvailable"] = bool(benchmark_components)
+    metrics["industryAvailable"] = bool(industry_components)
+    metrics["coverage"] = _relative_strength_coverage_label(bool(benchmark_components), bool(industry_components))
     signal, signal_label = _signal_from_relative_strength_score(score)
     detail = _build_relative_strength_detail(signal_label, metrics)
     return {
         "available": True,
         "score": score,
+        "rawScore": raw_score,
         "signal": signal,
         "signalLabel": signal_label,
         "detail": detail,
@@ -522,6 +529,28 @@ def _signal_from_relative_strength_score(score: int) -> tuple[str, str]:
     return "neutral", "相对中性"
 
 
+def _adjust_relative_strength_score(
+    raw_score: int,
+    benchmark_components: list[dict[str, object]],
+    industry_components: list[dict[str, object]],
+) -> int:
+    if benchmark_components and industry_components:
+        return raw_score
+    if benchmark_components or industry_components:
+        return int(round(50 + (raw_score - 50) * 0.65))
+    return raw_score
+
+
+def _relative_strength_coverage_label(benchmark_available: bool, industry_available: bool) -> str:
+    if benchmark_available and industry_available:
+        return "full"
+    if benchmark_available:
+        return "benchmark-only"
+    if industry_available:
+        return "industry-only"
+    return "none"
+
+
 def _build_relative_strength_detail(signal_label: str, metrics: dict[str, object]) -> str:
     fragments: list[str] = []
     benchmark_label = str(metrics.get("benchmarkLabel") or "基准指数")
@@ -540,6 +569,12 @@ def _build_relative_strength_detail(signal_label: str, metrics: dict[str, object
         fragments.append(f"近 5 日相对所属行业超额 {industry_short * 100:.2f}%")
     if industry_name and isinstance(industry_medium, (int, float)):
         fragments.append(f"近 20 日相对所属行业超额 {industry_medium * 100:.2f}%")
+
+    coverage = str(metrics.get("coverage") or "none")
+    if coverage == "benchmark-only":
+        fragments.append(f"{industry_name or '所属行业'}侧待补齐，当前先按大盘基准比较")
+    elif coverage == "industry-only":
+        fragments.append(f"{benchmark_label}侧待补齐，当前先按行业相对强弱比较")
 
     if not fragments:
         return "相对强弱样本不足，暂不放大结论。"

@@ -13,6 +13,7 @@ class Candle:
     close: float
     volume: float
     amount: float | None = None
+    turnover: float | None = None
 
     def to_dict(self) -> dict[str, str | float | None]:
         return {
@@ -23,6 +24,7 @@ class Candle:
             "close": self.close,
             "volume": self.volume,
             "amount": self.amount,
+            "turnover": self.turnover,
         }
 
 
