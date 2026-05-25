@@ -14,7 +14,8 @@
 - 详情页支持按按钮加载独立资金面分析，展示资金净额、资金净流入占比、融资余额、融资买入额，并给出综合结论。
 - 页面支持访问密码保护；输入正确密码后，先进入股票输入首页，再进入单股票详情页。
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
-- GitHub Actions 可在北京时间收盘后自动同步全市场 A 股，并把 SQLite 缓存上传到 VPS。
+- GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并把 `data/candles.db` 上传到 VPS。
+- GitHub Actions 还可独立同步相对强弱缓存，并把 `data/relative_strength.db` 上传到 VPS。
 - GitHub Actions 还可独立在北京时间 18:09 同步资金面快照，写入独立 SQLite 缓存。
 - 推送到 GitHub main 后可自动把最新代码部署到 VPS，不覆盖 `data`、`.env` 和 `.venv`。
 
@@ -128,6 +129,8 @@ python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 6
 - 用于市场基准比较的指数日线缓存。
 - 用于行业相对强弱比较的行业板块日线缓存。
 
+全市场模式下，行业映射会优先复用现有缓存；只有映射缺失或超过 5 天未刷新时才会重新全量抓取。指数与行业 K 线仍按现有数据库中的最新日期做增量补齐。
+
 详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。综合结论区现在还会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决分。
 
 ## 运行测试
@@ -140,7 +143,7 @@ python -m unittest discover -s tests -v
 
 ### Git 上传规则
 
-- 要上传到 GitHub：源码、[.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)、README、部署模板。
+- 要上传到 GitHub：源码、[.github/workflows/update-a-share-data.yml](.github/workflows/update-a-share-data.yml)、[.github/workflows/update-relative-strength-data.yml](.github/workflows/update-relative-strength-data.yml)、README、部署模板。
 - 不要上传到 GitHub：.venv、.env、data 目录、本地 SQLite、[.github/deploy-memory.md](.github/deploy-memory.md)、任何私钥、Token、密码或服务器私密文件。
 - 不要忽略整个 .github 目录；如果 .github 不上传，GitHub Actions 就不会生效。
 

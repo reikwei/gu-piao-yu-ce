@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from datetime import date
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from kronos_mvp.relative_strength import (
     build_relative_strength_analysis,
     industry_key_from_name,
 )
+from kronos_mvp.storage import SHANGHAI_TZ
 
 
 class _Mapping:
@@ -23,6 +25,7 @@ class MemoryRelativeStrengthProvider:
     name = "memory"
 
     def __init__(self):
+        self.mapping_calls = 0
         self.index_calls: list[tuple[str, date | None]] = []
         self.industry_calls: list[tuple[str, date | None]] = []
 
@@ -34,6 +37,7 @@ class MemoryRelativeStrengthProvider:
         ]
 
     def fetch_industry_mappings(self):
+        self.mapping_calls += 1
         return [_Mapping(symbol="600835", industry_name="家电行业")]
 
     def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
@@ -119,6 +123,30 @@ class RelativeStrengthSyncServiceTests(unittest.TestCase):
             self.assertEqual(store.get_symbol_industry("600835").industry_name, "家电行业")
             self.assertEqual(store.get_latest("benchmark:sh", limit=1)[0].close, 3235)
             self.assertEqual(store.get_latest("industry:家电行业", limit=1)[0].close, 1512)
+
+    def test_sync_market_reuses_fresh_mappings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider()
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("家电行业"),
+                        industry_name="家电行业",
+                        source="akshare",
+                        updated_at=datetime.now(SHANGHAI_TZ).isoformat(timespec="seconds"),
+                    )
+                ]
+            )
+
+            result = service.sync_market(history_days=20)
+
+            self.assertEqual(result.mapping_rows, 0)
+            self.assertEqual(provider.mapping_calls, 0)
+            self.assertEqual(result.benchmark_labels, ("沪深300", "上证指数", "深证成指", "创业板指"))
+            self.assertEqual(result.industry_names, ("家电行业",))
 
 
 class RelativeStrengthAnalysisTests(unittest.TestCase):

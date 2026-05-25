@@ -282,7 +282,7 @@ class RelativeStrengthSyncService:
         symbols: list[str] | None = None,
     ) -> RelativeStrengthSyncResult:
         normalized_symbols = [normalize_symbol(symbol) for symbol in (symbols or [])]
-        refresh_mappings = not normalized_symbols or self.store.mapping_is_stale()
+        refresh_mappings = self.store.mapping_is_stale()
         if normalized_symbols and not refresh_mappings:
             refresh_mappings = any(self.store.get_symbol_industry(symbol) is None for symbol in normalized_symbols)
         mapping_rows = self._sync_mappings() if refresh_mappings else 0
