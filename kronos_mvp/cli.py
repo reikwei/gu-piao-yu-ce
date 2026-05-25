@@ -47,6 +47,11 @@ def main() -> None:
     sync_parser.add_argument("--progress-file", help="progress JSON file used to resume interrupted all-market syncs")
     sync_parser.add_argument("--max-retries", type=int, default=int(os.getenv("SYNC_MAX_RETRIES", "2")))
     sync_parser.add_argument("--reset-progress", action="store_true", help="discard saved progress and rebuild the queue")
+    sync_parser.add_argument(
+        "--full-refresh",
+        action="store_true",
+        help="re-fetch full history for matched symbols and overwrite existing cached rows",
+    )
 
     sync_fund_parser = subparsers.add_parser("sync-funds", help="sync recent market-wide fund factors")
     sync_fund_parser.add_argument(
@@ -134,14 +139,26 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
         if args.reset_progress:
             _delete_progress_file(progress_path)
 
-        state = _load_progress_state(progress_path, market=args.market, max_retries=args.max_retries, prefixes=prefixes)
+        state = _load_progress_state(
+            progress_path,
+            market=args.market,
+            max_retries=args.max_retries,
+            prefixes=prefixes,
+            full_refresh=args.full_refresh,
+        )
         resume_source = None
         if state is None:
             symbols = list_a_share_symbols(market=args.market)
             symbols = _filter_symbols_by_prefixes(symbols, prefixes)
             if not symbols:
                 parser.error("sync --all resolved no symbols")
-            state = _new_progress_state(symbols=symbols, market=args.market, max_retries=args.max_retries, prefixes=prefixes)
+            state = _new_progress_state(
+                symbols=symbols,
+                market=args.market,
+                max_retries=args.max_retries,
+                prefixes=prefixes,
+                full_refresh=args.full_refresh,
+            )
             _save_progress_state(progress_path, state)
             resume_source = "fresh"
         else:
@@ -157,6 +174,7 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
                     "resume": resume_source != "fresh",
                     "resume_source": resume_source,
                     "prefixes": state.get("prefixes", []),
+                    "fullRefresh": bool(state.get("full_refresh")),
                     "pending": len(state["pending"]),
                     "total": state["summary"]["symbols"],
                 },
@@ -169,24 +187,25 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
     symbols = _normalize_symbols(args.symbols)
     if not symbols:
         parser.error("sync requires one or more symbols or --all")
-    _run_symbol_sync(service, symbols)
+    _run_symbol_sync(service, symbols, full_refresh=args.full_refresh)
 
 
-def _run_symbol_sync(service: DataSyncService, symbols: list[str]) -> None:
+def _run_symbol_sync(service: DataSyncService, symbols: list[str], full_refresh: bool = False) -> None:
     succeeded = 0
     updated = 0
     total_rows = 0
     for symbol in symbols:
-        result = service.sync_symbol(symbol)
+        result = service.sync_symbol(symbol, full_refresh=full_refresh)
         succeeded += 1
         updated += int(result.rows > 0)
         total_rows += result.rows
-        print(json.dumps({"ok": True, **result.__dict__}, ensure_ascii=False))
+        print(json.dumps({"ok": True, **result.__dict__, "fullRefresh": full_refresh}, ensure_ascii=False))
     print(
         json.dumps(
             {
                 "summary": {
                     "mode": "symbols",
+                    "fullRefresh": full_refresh,
                     "symbols": len(symbols),
                     "succeeded": succeeded,
                     "failed": 0,
@@ -267,7 +286,7 @@ def _run_all_market_sync(
         _save_progress_state(progress_path, state)
 
         try:
-            result = service.sync_symbol(symbol)
+            result = service.sync_symbol(symbol, full_refresh=bool(state.get("full_refresh")))
         except Exception as exc:
             error_text = str(exc)
             if attempt <= max_retries:
@@ -331,6 +350,7 @@ def _run_all_market_sync(
         **state["summary"],
         "mode": state["mode"],
         "market": state["market"],
+        "fullRefresh": bool(state.get("full_refresh")),
         "remaining": len(state["pending"]),
         "progress_file": str(progress_path),
     }
@@ -396,13 +416,20 @@ def _resolve_progress_path(db_path: str | Path, market: str, progress_file: str 
     return base_path.with_name(f"sync-progress{suffix}.json")
 
 
-def _new_progress_state(symbols: list[str], market: str, max_retries: int, prefixes: tuple[str, ...]) -> dict[str, Any]:
+def _new_progress_state(
+    symbols: list[str],
+    market: str,
+    max_retries: int,
+    prefixes: tuple[str, ...],
+    full_refresh: bool,
+) -> dict[str, Any]:
     normalized = _normalize_symbols(symbols)
     return {
         "version": _PROGRESS_VERSION,
         "mode": "all",
         "market": market,
         "prefixes": list(prefixes),
+        "full_refresh": full_refresh,
         "max_retries": max_retries,
         "status": "running",
         "started_at": _utc_now(),
@@ -422,7 +449,13 @@ def _new_progress_state(symbols: list[str], market: str, max_retries: int, prefi
     }
 
 
-def _load_progress_state(progress_path: Path, market: str, max_retries: int, prefixes: tuple[str, ...]) -> dict[str, Any] | None:
+def _load_progress_state(
+    progress_path: Path,
+    market: str,
+    max_retries: int,
+    prefixes: tuple[str, ...],
+    full_refresh: bool,
+) -> dict[str, Any] | None:
     if not progress_path.exists():
         return None
     try:
@@ -435,6 +468,7 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int, pre
         or payload.get("mode") != "all"
         or payload.get("market") != market
         or tuple(str(prefix) for prefix in payload.get("prefixes", [])) != prefixes
+        or bool(payload.get("full_refresh", False)) != full_refresh
     ):
         return None
 
@@ -446,6 +480,7 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int, pre
         payload["attempts"] = {symbol: _safe_int(attempts.get(symbol), 0) for symbol in pending}
         payload["failed_symbols"] = list(payload.get("failed_symbols", []))
         payload["prefixes"] = list(prefixes)
+        payload["full_refresh"] = full_refresh
         payload["summary"] = {
             "symbols": _safe_int(summary.get("symbols"), len(pending)),
             "processed": _safe_int(summary.get("processed"), 0),
@@ -467,7 +502,13 @@ def _load_progress_state(progress_path: Path, market: str, max_retries: int, pre
     ]
     failed_symbols = [symbol for symbol in failed_symbols if symbol]
     if failed_symbols:
-        state = _new_progress_state(symbols=failed_symbols, market=market, max_retries=max_retries, prefixes=prefixes)
+        state = _new_progress_state(
+            symbols=failed_symbols,
+            market=market,
+            max_retries=max_retries,
+            prefixes=prefixes,
+            full_refresh=full_refresh,
+        )
         state["resume_source"] = "failed_symbols"
         return state
 

@@ -80,7 +80,21 @@ python -m kronos_mvp.cli sync --all
 
 第一次全市场同步会比较久；后续同样再跑 `sync --all` 时，会按本地 SQLite 中每只股票的最新日期增量抓取，不再把每只股票整段历史重复写入数据库。
 
+如果你刚给 K 线缓存新增了字段，例如要把历史换手率整段回填进 `data/candles.db`，可以手动执行一次全量重抓：
+
+```powershell
+python -m kronos_mvp.cli sync --all --full-refresh
+```
+
+也可以只对单只股票执行：
+
+```powershell
+python -m kronos_mvp.cli sync 600835 --full-refresh
+```
+
 全市场同步现在还会默认写入进度文件，长任务如果中断，再次执行同样的 `sync --all` 会自动从未完成队列继续；单只股票临时失败会按 `--max-retries` 做重试。需要从头重建队列时，可以显式加上 `--reset-progress`。
+
+GitHub Actions 的 `Update A-share K-line Data` 工作流现在也支持手动 `workflow_dispatch` 时把 `full_refresh` 设为 `true`，用于全量回填 K 线字段。注意这只能修复 `candles.db` 里的历史字段缺口；相对强弱行业映射和行业 K 线仍由独立的 `update-relative-strength-data.yml` 维护，不会随着 K 线工作流自动补齐。
 
 如果要手动只跑某个交易所分片，可以使用：
 

@@ -298,7 +298,7 @@ class BaoStockDailyProvider:
                 close=float(row[4]),
                 volume=float(row[5] or 0),
                 amount=float(row[6] or 0),
-                turnover=_optional_float(row[7]) if len(row) > 7 else None,
+                turnover=_normalize_turnover_rate(row[7], source="baostock") if len(row) > 7 else None,
             )
             for row in rows
         ]
@@ -463,6 +463,16 @@ def _optional_float(value: object) -> float | None:
     return float(text)
 
 
+def _normalize_turnover_rate(value: object, source: str) -> float | None:
+    numeric = _optional_float(value)
+    if numeric is None:
+        return None
+    # AkShare 当前实盘环境返回的是 0.0177 这类分数，统一转成 1.77% 口径入库。
+    if source == "akshare" and abs(numeric) <= 1:
+        return numeric * 100
+    return numeric
+
+
 def _format_iso_date(value: date | None) -> str:
     return value.isoformat() if value is not None else ""
 
@@ -574,7 +584,7 @@ def _build_candles_from_akshare_ohlc(frame, start_date: date | None = None) -> l
                     close=float(row[close_column]),
                     volume=float(row[volume_column]),
                     amount=_optional_float(row[amount_column]) if amount_column is not None else None,
-                    turnover=_optional_float(row[turnover_column]) if turnover_column is not None else None,
+                    turnover=_normalize_turnover_rate(row[turnover_column], source="akshare") if turnover_column is not None else None,
                 )
             )
         except KeyError as exc:
@@ -596,7 +606,7 @@ def _build_candles_from_akshare_sina(frame) -> list[Candle]:
                     close=float(row["close"]),
                     volume=float(row["volume"]),
                     amount=float(row["amount"]) if "amount" in row and row["amount"] is not None else None,
-                    turnover=_optional_float(row[turnover_column]) if turnover_column is not None else None,
+                    turnover=_normalize_turnover_rate(row[turnover_column], source="akshare") if turnover_column is not None else None,
                 )
             )
         except KeyError as exc:

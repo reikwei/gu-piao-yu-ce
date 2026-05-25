@@ -12,9 +12,9 @@ class DataSyncService:
         self.store = store
         self.providers = providers
 
-    def sync_symbol(self, symbol: str) -> SyncResult:
+    def sync_symbol(self, symbol: str, full_refresh: bool = False) -> SyncResult:
         normalized = normalize_symbol(symbol)
-        latest_date = self.store.get_latest_date(normalized)
+        latest_date = None if full_refresh else self.store.get_latest_date(normalized)
         start_date = None if latest_date is None else latest_date + timedelta(days=1)
         errors: list[str] = []
         for provider in self.providers:

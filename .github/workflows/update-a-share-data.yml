@@ -11,6 +11,11 @@ on:
         description: "Optional space-separated stock symbols; leave blank to sync all A-shares"
         required: false
         default: ""
+      full_refresh:
+        description: "Set true to re-fetch full K-line history and rewrite cached rows"
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "30 8 * * 1-5"
 
@@ -40,7 +45,11 @@ jobs:
       - name: Sync data
         run: |
           SYMBOLS="${{ github.event.inputs.symbols }}"
-          python -m kronos_mvp.cli sync $SYMBOLS
+          FULL_REFRESH_FLAG=""
+          if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
+            FULL_REFRESH_FLAG="--full-refresh"
+          fi
+          python -m kronos_mvp.cli sync $SYMBOLS ${FULL_REFRESH_FLAG}
       - name: Upload SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
         uses: appleboy/scp-action@v0.1.7
@@ -146,12 +155,16 @@ jobs:
         run: |
           mkdir -p data
           set -o pipefail
+          FULL_REFRESH_FLAG=""
+          if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
+            FULL_REFRESH_FLAG="--full-refresh"
+          fi
           : > "${SHARD_LOG_PATH}"
           pass=1
           max_passes="${SHARD_RECOVERY_PASSES}"
           while [ "$pass" -le "$max_passes" ]; do
             echo "{\"event\":\"sync_pass\",\"shard\":\"${SHARD_ID}\",\"market\":\"${SHARD_MARKET}\",\"prefixes\":\"${SHARD_PREFIXES}\",\"pass\":${pass},\"max_passes\":${max_passes}}" | tee -a "${SHARD_LOG_PATH}"
-            python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${SHARD_MARKET}" --prefixes "${SHARD_PREFIXES}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 | tee -a "${SHARD_LOG_PATH}"
+            python -m kronos_mvp.cli --db "${SHARD_DB_PATH}" sync --all --market "${SHARD_MARKET}" --prefixes "${SHARD_PREFIXES}" --progress-file "${SHARD_PROGRESS_PATH}" --max-retries 2 ${FULL_REFRESH_FLAG} | tee -a "${SHARD_LOG_PATH}"
             status=${PIPESTATUS[0]}
             if [ "$status" -eq 0 ]; then
               exit 0

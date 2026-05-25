@@ -78,6 +78,30 @@ class DataSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.rows, 0)
             self.assertEqual(store.get_latest_date("600519"), date(2026, 5, 22))
 
+    def test_sync_full_refresh_rewrites_existing_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+            store.upsert_many(
+                "600519",
+                [Candle(date=date(2026, 5, 22), open=1, high=2, low=1, close=1.8, volume=10, amount=18, turnover=None)],
+            )
+            service = DataSyncService(
+                store=store,
+                providers=[
+                    MemoryProvider(
+                        "working",
+                        candles=[
+                            Candle(date=date(2026, 5, 22), open=1, high=2, low=1, close=1.8, volume=10, amount=18, turnover=1.82)
+                        ],
+                    )
+                ],
+            )
+
+            result = service.sync_symbol("600519", full_refresh=True)
+
+            self.assertEqual(result.rows, 1)
+            self.assertEqual(store.get_latest("600519", limit=1)[0].turnover, 1.82)
+
 
 if __name__ == "__main__":
     unittest.main()

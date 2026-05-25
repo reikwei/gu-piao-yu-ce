@@ -98,6 +98,46 @@ class CliTests(unittest.TestCase):
         self.assertIn('"mode": "all"', stdout.getvalue())
         self.assertIn('"updated": 1', stdout.getvalue())
 
+    def test_sync_all_full_refresh_passes_flag_to_service(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.side_effect = [
+            SyncResult(symbol="000001", provider="baostock", rows=1),
+            SyncResult(symbol="600519", provider="baostock", rows=1),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv", ["prog", "--db", str(Path(tmp) / "candles.db"), "sync", "--all", "--full-refresh"]
+        ), patch("kronos_mvp.cli.CandleStore"), patch(
+            "kronos_mvp.cli.build_default_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.DataSyncService", return_value=sync_service
+        ), patch(
+            "kronos_mvp.cli.list_a_share_symbols", return_value=["000001", "600519"]
+        ), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        self.assertEqual(
+            sync_service.sync_symbol.call_args_list,
+            [call("000001", full_refresh=True), call("600519", full_refresh=True)],
+        )
+        self.assertIn('"fullRefresh": true', stdout.getvalue())
+
+    def test_sync_symbol_full_refresh_passes_flag_to_service(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.return_value = SyncResult(symbol="600519", provider="baostock", rows=3)
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv", ["prog", "--db", str(Path(tmp) / "candles.db"), "sync", "600519", "--full-refresh"]
+        ), patch("kronos_mvp.cli.CandleStore"), patch(
+            "kronos_mvp.cli.build_default_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.DataSyncService", return_value=sync_service
+        ), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        sync_service.sync_symbol.assert_called_once_with("600519", full_refresh=True)
+        self.assertIn('"fullRefresh": true', stdout.getvalue())
+
     def test_sync_all_filters_symbols_by_prefixes(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [
@@ -127,7 +167,10 @@ class CliTests(unittest.TestCase):
         ) as list_symbols, redirect_stdout(io.StringIO()) as stdout:
             main()
 
-        self.assertEqual(sync_service.sync_symbol.call_args_list, [call("600519"), call("688001")])
+        self.assertEqual(
+            sync_service.sync_symbol.call_args_list,
+            [call("600519", full_refresh=False), call("688001", full_refresh=False)],
+        )
         list_symbols.assert_called_once_with(market="sh")
         self.assertIn('"prefixes": ["600", "688"]', stdout.getvalue())
 
@@ -135,7 +178,8 @@ class CliTests(unittest.TestCase):
         sync_service = Mock()
         attempts = {"000001": 0}
 
-        def sync_symbol(symbol: str) -> SyncResult:
+        def sync_symbol(symbol: str, full_refresh: bool = False) -> SyncResult:
+            self.assertFalse(full_refresh)
             if symbol == "000001":
                 attempts[symbol] += 1
                 if attempts[symbol] == 1:
@@ -170,7 +214,11 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(
             sync_service.sync_symbol.call_args_list,
-            [call("000001"), call("600519"), call("000001")],
+            [
+                call("000001", full_refresh=False),
+                call("600519", full_refresh=False),
+                call("000001", full_refresh=False),
+            ],
         )
         self.assertFalse(progress_path.exists())
         self.assertIn('"retrying": true', stdout.getvalue())
@@ -226,7 +274,7 @@ class CliTests(unittest.TestCase):
                 main()
 
         list_symbols.assert_not_called()
-        sync_service.sync_symbol.assert_called_once_with("000001")
+        sync_service.sync_symbol.assert_called_once_with("000001", full_refresh=False)
         self.assertFalse(progress_path.exists())
         self.assertIn('"resume": true', stdout.getvalue())
 
