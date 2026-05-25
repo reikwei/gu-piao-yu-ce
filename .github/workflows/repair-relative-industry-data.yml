@@ -1,0 +1,101 @@
+name: Repair Relative Industry Data
+
+concurrency:
+  group: relative-strength-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional space-separated stock symbols; leave blank to repair all cached industry mappings and industry K-lines"
+        required: false
+        default: ""
+      history_days:
+        description: "History window to backfill when industry caches are missing"
+        required: false
+        default: "30"
+  schedule:
+    - cron: "9 13 * * 0"
+
+jobs:
+  repair_relative_industry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RELATIVE_DB_PATH: data/relative_strength.db
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DATA_DIR: ${{ secrets.VPS_DATA_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install data dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.sync.txt
+
+      - name: Restore relative strength cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.RELATIVE_DB_PATH }}
+          key: a-share-relative-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            a-share-relative-${{ github.ref_name }}-
+
+      - name: Repair industry mappings and industry K-lines
+        run: |
+          mkdir -p data
+          SYMBOLS="${{ github.event.inputs.symbols }}"
+          HISTORY_DAYS="${{ github.event.inputs.history_days }}"
+          if [ -z "${HISTORY_DAYS}" ]; then
+            HISTORY_DAYS="30"
+          fi
+
+          if [ -n "${SYMBOLS}" ]; then
+            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative ${SYMBOLS} --history-days "${HISTORY_DAYS}"
+          else
+            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative --history-days "${HISTORY_DAYS}"
+          fi
+
+      - name: Upload relative strength repair artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relative-strength-industry-repair-db
+          if-no-files-found: ignore
+          path: |
+            data/relative_strength.db
+
+      - name: Save relative strength cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.RELATIVE_DB_PATH }}
+          key: a-share-relative-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload relative strength cache to VPS via password
+        if: ${{ env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN '))) }}
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
+          source: "data/relative_strength.db"
+          target: ${{ env.VPS_DATA_DIR }}
+
+      - name: Upload relative strength cache to VPS via SSH key
+        if: ${{ env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ') }}
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          source: "data/relative_strength.db"
+          target: ${{ env.VPS_DATA_DIR }}

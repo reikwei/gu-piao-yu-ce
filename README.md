@@ -16,6 +16,7 @@
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
 - GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并把 `data/candles.db` 上传到 VPS。
 - GitHub Actions 还可独立同步相对强弱缓存，并把 `data/relative_strength.db` 上传到 VPS。
+- GitHub Actions 还可独立在北京时间每周日 21:09 运行一次行业修复任务，专门补 `data/relative_strength.db` 里的行业映射和行业 K 线缓存。
 - GitHub Actions 还可独立在北京时间 18:09 同步资金面快照，写入独立 SQLite 缓存。
 - 相对强弱独立工作流当前默认在北京时间工作日 18:20 触发；若当天不是 A 股交易日，会在安装依赖后直接跳过同步和上传。
 - 推送到 GitHub main 后可自动把最新代码部署到 VPS，不覆盖 `data`、`.env` 和 `.venv`。
@@ -143,6 +144,8 @@ python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 6
 - 股票到东财行业板块的映射。
 - 用于市场基准比较的指数日线缓存。
 - 用于行业相对强弱比较的行业板块日线缓存。
+
+日常的 `Update Relative Strength Data` 会在工作日 18:20 跑增量同步，并在非交易日自动跳过。若要单独修复行业映射与行业 K 线，可以使用独立的 `Repair Relative Industry Data` workflow：它会在北京时间每周日 21:09 运行一次，且保留手动 `workflow_dispatch` 入口，不受交易日守卫影响。
 
 全市场模式下，行业映射会优先复用现有缓存；只有映射缺失或超过 5 天未刷新时才会重新全量抓取。指数与行业 K 线仍按现有数据库中的最新日期做增量补齐。
 
