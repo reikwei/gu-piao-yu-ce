@@ -23,6 +23,25 @@ class DataProvider(Protocol):
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
+class RelativeIndustryMapping:
+    symbol: str
+    industry_name: str
+
+
+class RelativeStrengthProvider(Protocol):
+    name: str
+
+    def fetch_index_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        raise NotImplementedError
+
+    def fetch_industry_mappings(self) -> list[RelativeIndustryMapping]:
+        raise NotImplementedError
+
+    def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
+        raise NotImplementedError
+
+
 @dataclass
 class MemoryProvider:
     name: str
@@ -97,6 +116,112 @@ class AkShareDailyProvider:
             raise ProviderError("akshare returned no rows")
 
         return _build_candles_from_akshare_hist(frame)
+
+
+class AkShareRelativeStrengthProvider:
+    name = "akshare"
+
+    def fetch_index_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        try:
+            import akshare as ak
+        except ImportError as exc:
+            raise ProviderError("akshare is not installed") from exc
+
+        try:
+            frame = _call_with_retries(
+                lambda: ak.stock_zh_index_daily_em(
+                    symbol=symbol,
+                    start_date=_format_compact_date(start_date) or "19900101",
+                    end_date="20500101",
+                ),
+                attempts=3,
+            )
+        except Exception as exc:
+            raise ProviderError(str(exc)) from exc
+
+        if frame is None or frame.empty:
+            if start_date is not None:
+                return []
+            raise ProviderError("akshare returned no index rows")
+        return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+
+    def fetch_industry_mappings(self) -> list[RelativeIndustryMapping]:
+        try:
+            import akshare as ak
+        except ImportError as exc:
+            raise ProviderError("akshare is not installed") from exc
+
+        try:
+            frame = _call_with_retries(ak.stock_board_industry_name_em, attempts=3)
+        except Exception as exc:
+            raise ProviderError(str(exc)) from exc
+
+        if frame is None or frame.empty:
+            raise ProviderError("akshare returned no industries")
+
+        name_column = _find_frame_column(frame.columns, ("板块名称", "行业名称", "名称", "板块"))
+        if name_column is None:
+            raise ProviderError("akshare industry schema changed, missing name column")
+
+        mappings: list[RelativeIndustryMapping] = []
+        seen_symbols: set[str] = set()
+        errors: list[str] = []
+        for _, row in frame.iterrows():
+            industry_name = str(row[name_column]).strip()
+            if not industry_name or industry_name.lower() in {"nan", "none"}:
+                continue
+            try:
+                members = _call_with_retries(
+                    lambda industry_name=industry_name: ak.stock_board_industry_cons_em(symbol=industry_name),
+                    attempts=3,
+                )
+            except Exception as exc:
+                errors.append(f"{industry_name}: {exc}")
+                continue
+            if members is None or members.empty:
+                continue
+
+            code_column = _find_frame_column(members.columns, ("代码", "股票代码", "证券代码", "A股代码", "code"))
+            if code_column is None:
+                errors.append(f"{industry_name}: missing code column")
+                continue
+
+            for _, member in members.iterrows():
+                code = _normalize_a_share_code_text(member[code_column])
+                if not _is_a_share_symbol(code) or code in seen_symbols:
+                    continue
+                seen_symbols.add(code)
+                mappings.append(RelativeIndustryMapping(symbol=code, industry_name=industry_name))
+
+        if mappings:
+            return mappings
+        raise ProviderError("; ".join(errors) if errors else "akshare returned no industry mappings")
+
+    def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
+        try:
+            import akshare as ak
+        except ImportError as exc:
+            raise ProviderError("akshare is not installed") from exc
+
+        try:
+            frame = _call_with_retries(
+                lambda: ak.stock_board_industry_hist_em(
+                    symbol=industry_name,
+                    start_date=_format_compact_date(start_date) or "19900101",
+                    end_date="20500101",
+                    period="日k",
+                    adjust="",
+                ),
+                attempts=3,
+            )
+        except Exception as exc:
+            raise ProviderError(str(exc)) from exc
+
+        if frame is None or frame.empty:
+            if start_date is not None:
+                return []
+            raise ProviderError("akshare returned no industry rows")
+        return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
 
 
 class BaoStockDailyProvider:
@@ -327,6 +452,15 @@ def _find_frame_column(columns, candidates: tuple[str, ...]) -> str | None:
     return None
 
 
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    return float(text)
+
+
 def _format_iso_date(value: date | None) -> str:
     return value.isoformat() if value is not None else ""
 
@@ -391,18 +525,52 @@ def _fetch_akshare_cdr_daily(ak: object, symbol: str, start_date: date | None) -
 
 
 def _build_candles_from_akshare_hist(frame) -> list[Candle]:
+    return _build_candles_from_akshare_ohlc(frame)
+
+
+def _build_candles_from_akshare_ohlc(frame, start_date: date | None = None) -> list[Candle]:
+    date_column = _find_frame_column(frame.columns, ("日期", "date", "交易日期", "时间"))
+    open_column = _find_frame_column(frame.columns, ("开盘", "open"))
+    high_column = _find_frame_column(frame.columns, ("最高", "high"))
+    low_column = _find_frame_column(frame.columns, ("最低", "low"))
+    close_column = _find_frame_column(frame.columns, ("收盘", "close"))
+    volume_column = _find_frame_column(frame.columns, ("成交量", "volume"))
+    amount_column = _find_frame_column(frame.columns, ("成交额", "amount"))
+
+    missing = [
+        name
+        for name, column in (
+            ("date", date_column),
+            ("open", open_column),
+            ("high", high_column),
+            ("low", low_column),
+            ("close", close_column),
+            ("volume", volume_column),
+        )
+        if column is None
+    ]
+    if missing:
+        raise ProviderError(f"akshare schema changed, missing {', '.join(missing)}")
+
+    normalized = frame.copy()
+    normalized[date_column] = normalized[date_column].map(_parse_date)
+    if start_date is not None:
+        normalized = normalized[normalized[date_column] >= start_date]
+    if normalized.empty:
+        return []
+
     candles: list[Candle] = []
-    for _, row in frame.iterrows():
+    for _, row in normalized.sort_values(date_column).iterrows():
         try:
             candles.append(
                 Candle(
-                    date=_parse_date(row["日期"]),
-                    open=float(row["开盘"]),
-                    high=float(row["最高"]),
-                    low=float(row["最低"]),
-                    close=float(row["收盘"]),
-                    volume=float(row["成交量"]),
-                    amount=float(row["成交额"]) if "成交额" in row and row["成交额"] is not None else None,
+                    date=_parse_date(row[date_column]),
+                    open=float(row[open_column]),
+                    high=float(row[high_column]),
+                    low=float(row[low_column]),
+                    close=float(row[close_column]),
+                    volume=float(row[volume_column]),
+                    amount=_optional_float(row[amount_column]) if amount_column is not None else None,
                 )
             )
         except KeyError as exc:
@@ -584,6 +752,25 @@ def _normalize_symbol_candidates(symbols: list[str], market: str) -> list[str]:
         seen.add(code)
         normalized.append(code)
     return normalized
+
+
+def _normalize_a_share_code_text(value: object) -> str:
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return ""
+    if text.endswith(".0"):
+        text = text[:-2]
+
+    lowered = text.lower()
+    for prefix in ("sh.", "sz.", "bj.", "sh", "sz", "bj"):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+
+    code = normalize_symbol(text)
+    if code.isdigit() and len(code) < 6:
+        code = code.zfill(6)
+    return code
 
 
 def _baostock_symbol(symbol: str) -> str:

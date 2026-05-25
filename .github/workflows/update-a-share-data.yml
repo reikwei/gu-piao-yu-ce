@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 120
     env:
       KLINE_DB_PATH: data/candles.db
+      RELATIVE_DB_PATH: data/relative_strength.db
       TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
       DATA_PROVIDERS: akshare,baostock,tushare
       VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -41,6 +42,7 @@ jobs:
         run: |
           SYMBOLS="${{ github.event.inputs.symbols }}"
           python -m kronos_mvp.cli sync $SYMBOLS
+          python -m kronos_mvp.cli sync-relative $SYMBOLS
       - name: Upload SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
         uses: appleboy/scp-action@v0.1.7
@@ -48,7 +50,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
-          source: "data/candles.db"
+          source: "data/candles.db,data/relative_strength.db"
           target: ${{ env.VPS_DATA_DIR }}
       - name: Upload SQLite cache to VPS via SSH key
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
@@ -57,7 +59,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          source: "data/candles.db"
+          source: "data/candles.db,data/relative_strength.db"
           target: ${{ env.VPS_DATA_DIR }}
 
   update_market_shards:
@@ -421,13 +423,18 @@ jobs:
             exit 1
           fi
           python -m kronos_mvp.cli merge-db data/candles.db "${DBS[@]}"
+      - name: Sync relative strength cache
+        run: |
+          python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative --history-days 60
       - name: Upload merged SQLite cache artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sync-merged-db
           if-no-files-found: ignore
-          path: data/candles.db
+          path: |
+            data/candles.db
+            data/relative_strength.db
       - name: Upload merged SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
         uses: appleboy/scp-action@v0.1.7
@@ -435,7 +442,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
-          source: "data/candles.db"
+          source: "data/candles.db,data/relative_strength.db"
           target: ${{ env.VPS_DATA_DIR }}
       - name: Upload merged SQLite cache to VPS via SSH key
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true' && contains(env.VPS_SSH_KEY, 'BEGIN ')
@@ -444,5 +451,5 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          source: "data/candles.db"
+          source: "data/candles.db,data/relative_strength.db"
           target: ${{ env.VPS_DATA_DIR }}

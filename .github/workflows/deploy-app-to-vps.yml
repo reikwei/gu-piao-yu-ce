@@ -130,6 +130,7 @@ jobs:
               "APP_PUBLIC_BASE_URL": public_base_url,
               "APP_ALLOW_ORIGINS": public_base_url,
               "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
+              "RELATIVE_DB_PATH": existing.get("RELATIVE_DB_PATH", "data/relative_strength.db"),
               "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
             }
             for key, value in updates.items():
@@ -198,6 +199,7 @@ jobs:
               "APP_PUBLIC_BASE_URL": public_base_url,
               "APP_ALLOW_ORIGINS": public_base_url,
               "APP_DB_PATH": existing.get("APP_DB_PATH", "data/app.db"),
+              "RELATIVE_DB_PATH": existing.get("RELATIVE_DB_PATH", "data/relative_strength.db"),
               "ADMIN_USERNAME": existing.get("ADMIN_USERNAME", "admin"),
             }
             for key, value in updates.items():

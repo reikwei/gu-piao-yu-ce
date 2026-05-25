@@ -7,10 +7,11 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
-from kronos_mvp.api import create_app
+from kronos_mvp.api import _build_prediction_analysis, create_app
 from kronos_mvp.funds import FundFactor
 from kronos_mvp.models import Candle, ForecastPath, PredictionPoint, PredictionResult, SyncResult
 from kronos_mvp.providers import ProviderError
+from kronos_mvp.relative_strength import RelativeStrengthStore, SymbolIndustry, industry_key_from_name
 
 
 def _sample_candles() -> list[Candle]:
@@ -31,6 +32,36 @@ def _sample_prediction_result() -> PredictionResult:
             )
         ],
     )
+
+
+def _sample_price_volume_confirmed_candles() -> list[Candle]:
+    return [
+        Candle(date=date(2026, 5, 12), open=10.00, high=10.18, low=9.96, close=10.12, volume=100, amount=1012),
+        Candle(date=date(2026, 5, 13), open=10.10, high=10.26, low=10.02, close=10.21, volume=104, amount=1062),
+        Candle(date=date(2026, 5, 14), open=10.20, high=10.34, low=10.08, close=10.30, volume=108, amount=1112),
+        Candle(date=date(2026, 5, 15), open=10.28, high=10.42, low=10.16, close=10.38, volume=112, amount=1163),
+        Candle(date=date(2026, 5, 16), open=10.36, high=10.50, low=10.24, close=10.47, volume=116, amount=1215),
+        Candle(date=date(2026, 5, 19), open=10.46, high=10.63, low=10.34, close=10.58, volume=120, amount=1269),
+        Candle(date=date(2026, 5, 20), open=10.56, high=10.76, low=10.48, close=10.70, volume=126, amount=1348),
+        Candle(date=date(2026, 5, 21), open=10.68, high=10.88, low=10.60, close=10.82, volume=132, amount=1428),
+        Candle(date=date(2026, 5, 22), open=10.80, high=11.02, low=10.72, close=10.95, volume=138, amount=1511),
+        Candle(date=date(2026, 5, 23), open=10.98, high=11.46, low=10.94, close=11.38, volume=230, amount=2617),
+    ]
+
+
+def _sample_price_volume_weak_candles() -> list[Candle]:
+    return [
+        Candle(date=date(2026, 5, 12), open=11.80, high=11.88, low=11.62, close=11.70, volume=118, amount=1381),
+        Candle(date=date(2026, 5, 13), open=11.72, high=11.78, low=11.48, close=11.56, volume=120, amount=1387),
+        Candle(date=date(2026, 5, 14), open=11.58, high=11.64, low=11.32, close=11.40, volume=122, amount=1391),
+        Candle(date=date(2026, 5, 15), open=11.42, high=11.48, low=11.18, close=11.28, volume=124, amount=1399),
+        Candle(date=date(2026, 5, 16), open=11.30, high=11.36, low=11.02, close=11.10, volume=126, amount=1399),
+        Candle(date=date(2026, 5, 19), open=11.08, high=11.14, low=10.84, close=10.96, volume=128, amount=1402),
+        Candle(date=date(2026, 5, 20), open=10.98, high=11.02, low=10.72, close=10.82, volume=130, amount=1407),
+        Candle(date=date(2026, 5, 21), open=10.84, high=10.90, low=10.58, close=10.70, volume=132, amount=1412),
+        Candle(date=date(2026, 5, 22), open=10.72, high=10.78, low=10.46, close=10.56, volume=134, amount=1415),
+        Candle(date=date(2026, 5, 23), open=10.54, high=10.58, low=10.02, close=10.08, volume=228, amount=1296),
+    ]
 
 
 def _sample_fund_factors() -> list[FundFactor]:
@@ -84,10 +115,26 @@ class FakeFundStore:
         return self.last_updated_at
 
 
+class FakeRelativeStore:
+    def __init__(self, *args, last_updated_at: str | None = None, **kwargs):
+        self.db_path = Path("fake_relative.db")
+        self.last_updated_at = last_updated_at
+
+    def get_last_updated_at(self):
+        return self.last_updated_at
+
+    def get_symbol_industry(self, symbol: str):
+        return None
+
+    def get_latest(self, symbol: str, limit: int = 512):
+        return []
+
+
 def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
     path = Path(tmp)
     env = {
         "KLINE_DB_PATH": str(path / "candles.db"),
+        "RELATIVE_DB_PATH": str(path / "relative_strength.db"),
         "APP_DB_PATH": str(path / "app.db"),
         "APP_ACCESS_PASSWORD": "",
         "ADMIN_PASSWORD": "",
@@ -164,6 +211,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("name === 'logout'", response.text)
         self.assertIn("资金面分析", response.text)
         self.assertIn("综合结论", response.text)
+        self.assertIn("相对强弱层", response.text)
         self.assertIn("重新加载资金面数据", response.text)
         self.assertIn("数据更新时间", response.text)
         self.assertIn("样本交易日数", response.text)
@@ -232,10 +280,13 @@ class ApiTests(unittest.TestCase):
             factors=_sample_fund_factors(),
             last_updated_at="2026-05-25T18:09:00+08:00",
         )
+        relative_store = FakeRelativeStore(last_updated_at="2026-05-25T17:00:00+08:00")
 
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
             "kronos_mvp.api.CandleStore", return_value=store
-        ), patch("kronos_mvp.api.FundFactorStore", return_value=fund_store):
+        ), patch("kronos_mvp.api.FundFactorStore", return_value=fund_store), patch(
+            "kronos_mvp.api.RelativeStrengthStore", return_value=relative_store
+        ):
             client = TestClient(create_app())
 
             response = client.get("/api/data-freshness")
@@ -245,6 +296,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["updatedAt"], "2026-05-25T18:09:00+08:00")
         self.assertEqual(payload["klineUpdatedAt"], "2026-05-25T16:30:00+08:00")
         self.assertEqual(payload["fundUpdatedAt"], "2026-05-25T18:09:00+08:00")
+        self.assertEqual(payload["relativeUpdatedAt"], "2026-05-25T17:00:00+08:00")
         self.assertEqual(payload["fundLatestTradeDate"], "2026-05-23")
 
     def test_register_grants_ten_free_credits(self):
@@ -371,7 +423,7 @@ class ApiTests(unittest.TestCase):
             "kronos_mvp.api.CandleStore", return_value=store
         ), patch("kronos_mvp.api.DataSyncService", return_value=sync_service), patch(
             "kronos_mvp.api.KronosPredictor", return_value=predictor
-        ):
+        ), patch("kronos_mvp.api._auto_sync_relative_strength", return_value={"attempted": False, "updated": False}):
             client = TestClient(create_app())
             _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3")
@@ -394,7 +446,7 @@ class ApiTests(unittest.TestCase):
             "kronos_mvp.api.CandleStore", return_value=store
         ), patch("kronos_mvp.api.DataSyncService", return_value=sync_service), patch(
             "kronos_mvp.api.KronosPredictor", return_value=predictor
-        ):
+        ), patch("kronos_mvp.api._auto_sync_relative_strength", return_value={"attempted": False, "updated": False}):
             client = TestClient(create_app())
             _register(client)
             response = client.get("/api/predict/600519?horizon=1&paths=3")
@@ -426,8 +478,96 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(analysis["pathCount"], 1)
         self.assertEqual(analysis["upsideProbability"], 1.0)
         self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
+        self.assertIn("priceVolumeConfirmation", analysis)
+        self.assertIn("relativeStrength", analysis)
+        self.assertIn("score", analysis["priceVolumeConfirmation"])
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
+
+    def test_build_prediction_analysis_includes_bullish_relative_strength(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            relative_store = RelativeStrengthStore(Path(tmp) / "relative_strength.db")
+            relative_store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600519",
+                        industry_key=industry_key_from_name("白酒"),
+                        industry_name="白酒",
+                        source="akshare",
+                        updated_at="2026-05-25T16:30:00+08:00",
+                    )
+                ]
+            )
+            relative_store.upsert_candles(
+                "benchmark:sh",
+                [
+                    Candle(date=date(2026, 5, 12), open=10.0, high=10.1, low=9.9, close=10.0, volume=800, amount=8000),
+                    Candle(date=date(2026, 5, 13), open=10.02, high=10.12, low=9.98, close=10.05, volume=810, amount=8140),
+                    Candle(date=date(2026, 5, 14), open=10.06, high=10.16, low=10.0, close=10.10, volume=820, amount=8280),
+                    Candle(date=date(2026, 5, 15), open=10.10, high=10.20, low=10.04, close=10.16, volume=830, amount=8420),
+                    Candle(date=date(2026, 5, 16), open=10.14, high=10.24, low=10.08, close=10.22, volume=840, amount=8570),
+                    Candle(date=date(2026, 5, 19), open=10.20, high=10.30, low=10.12, close=10.28, volume=850, amount=8730),
+                    Candle(date=date(2026, 5, 20), open=10.26, high=10.36, low=10.18, close=10.34, volume=860, amount=8890),
+                    Candle(date=date(2026, 5, 21), open=10.30, high=10.40, low=10.24, close=10.40, volume=870, amount=9050),
+                    Candle(date=date(2026, 5, 22), open=10.36, high=10.46, low=10.30, close=10.46, volume=880, amount=9200),
+                    Candle(date=date(2026, 5, 23), open=10.42, high=10.52, low=10.36, close=10.52, volume=890, amount=9360),
+                ],
+            )
+            relative_store.upsert_candles(
+                "industry:白酒",
+                [
+                    Candle(date=date(2026, 5, 12), open=10.0, high=10.1, low=9.9, close=10.0, volume=900, amount=9000),
+                    Candle(date=date(2026, 5, 13), open=10.03, high=10.13, low=9.99, close=10.04, volume=910, amount=9140),
+                    Candle(date=date(2026, 5, 14), open=10.07, high=10.17, low=10.01, close=10.09, volume=920, amount=9280),
+                    Candle(date=date(2026, 5, 15), open=10.10, high=10.20, low=10.04, close=10.13, volume=930, amount=9420),
+                    Candle(date=date(2026, 5, 16), open=10.13, high=10.23, low=10.07, close=10.18, volume=940, amount=9570),
+                    Candle(date=date(2026, 5, 19), open=10.18, high=10.28, low=10.12, close=10.23, volume=950, amount=9730),
+                    Candle(date=date(2026, 5, 20), open=10.21, high=10.31, low=10.15, close=10.28, volume=960, amount=9890),
+                    Candle(date=date(2026, 5, 21), open=10.26, high=10.36, low=10.20, close=10.33, volume=970, amount=10050),
+                    Candle(date=date(2026, 5, 22), open=10.30, high=10.40, low=10.24, close=10.38, volume=980, amount=10200),
+                    Candle(date=date(2026, 5, 23), open=10.34, high=10.44, low=10.28, close=10.43, volume=990, amount=10360),
+                ],
+            )
+
+            analysis = _build_prediction_analysis(
+                _sample_price_volume_confirmed_candles(),
+                _sample_prediction_result(),
+                horizon=1,
+                symbol="600519",
+                relative_strength_store=relative_store,
+            )
+
+        self.assertTrue(analysis["relativeStrength"]["available"])
+        self.assertEqual(analysis["relativeStrength"]["signal"], "bullish")
+        self.assertGreaterEqual(analysis["relativeStrength"]["score"], 65)
+
+    def test_build_prediction_analysis_flags_bullish_price_volume_confirmation(self):
+        analysis = _build_prediction_analysis(_sample_price_volume_confirmed_candles(), _sample_prediction_result(), horizon=1)
+
+        confirmation = analysis["priceVolumeConfirmation"]
+        self.assertEqual(confirmation["signal"], "bullish")
+        self.assertGreaterEqual(confirmation["score"], 65)
+        self.assertTrue(confirmation["metrics"]["isBreakout"])
+        self.assertGreater(confirmation["metrics"]["volumeRatio5"], 1.2)
+
+    def test_build_prediction_analysis_flags_bearish_price_volume_confirmation(self):
+        bearish_result = PredictionResult(
+            symbol="600519",
+            backend="kronos",
+            paths=[
+                ForecastPath(
+                    name="kronos_path_1",
+                    points=[PredictionPoint(date=date(2026, 5, 26), open=10.02, high=10.08, low=9.84, close=9.92)],
+                )
+            ],
+        )
+
+        analysis = _build_prediction_analysis(_sample_price_volume_weak_candles(), bearish_result, horizon=1)
+
+        confirmation = analysis["priceVolumeConfirmation"]
+        self.assertEqual(confirmation["signal"], "bearish")
+        self.assertLessEqual(confirmation["score"], 35)
+        self.assertTrue(confirmation["metrics"]["isBreakdown"])
 
     def test_fund_analysis_endpoint_returns_scored_summary(self):
         fund_store = FakeFundStore(factors=_sample_fund_factors())

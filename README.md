@@ -51,6 +51,7 @@ Copy-Item .env.example .env
 本项目会自动读取工作目录下的 .env。最少需要确认下面几项：
 
 - KLINE_DB_PATH
+- RELATIVE_DB_PATH
 - PYTHONPATH
 - KRONOS_MODEL
 - KRONOS_TOKENIZER
@@ -109,7 +110,25 @@ python -m kronos_mvp.cli --fund-db data/fund_factors.db sync-funds --history-day
 - 最新交易日会在每次运行时重新刷新。
 - GitHub Actions 工作流也会按同样的增量策略执行，避免资金库永远只停在单日快照。
 
-详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。
+如果你希望把“相对强弱”所需的指数、行业映射和行业 K 线也同步到本地缓存，可以执行：
+
+```powershell
+python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative --history-days 60
+```
+
+如果只想为某几只股票补齐相对强弱依赖，也可以直接带股票代码：
+
+```powershell
+python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 600835 600519 --history-days 60
+```
+
+`sync-relative` 会维护 `data/relative_strength.db`，其中包含：
+
+- 股票到东财行业板块的映射。
+- 用于市场基准比较的指数日线缓存。
+- 用于行业相对强弱比较的行业板块日线缓存。
+
+详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。综合结论区现在还会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决分。
 
 ## 运行测试
 

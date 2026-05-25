@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from .funds import DEFAULT_FUND_HISTORY_DAYS, FundFactorStore, FundFactorSyncService, build_default_fund_providers
 from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
+from .relative_strength import DEFAULT_RELATIVE_HISTORY_DAYS, RelativeStrengthStore, RelativeStrengthSyncService
 from .storage import CandleStore, normalize_symbol
 from .sync import DataSyncService
 from .accounts import AccountStore
@@ -27,6 +28,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="A-share Kronos MVP")
     parser.add_argument("--db", default=os.getenv("KLINE_DB_PATH", "data/candles.db"))
     parser.add_argument("--fund-db", default=os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
+    parser.add_argument("--relative-db", default=os.getenv("RELATIVE_DB_PATH", "data/relative_strength.db"))
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sync_parser = subparsers.add_parser("sync", help="sync daily K-line data")
@@ -54,6 +56,15 @@ def main() -> None:
         help="number of recent A-share trading sessions to keep incrementally in the fund cache",
     )
 
+    sync_relative_parser = subparsers.add_parser("sync-relative", help="sync benchmark, industry mapping and relative strength cache")
+    sync_relative_parser.add_argument("symbols", nargs="*")
+    sync_relative_parser.add_argument(
+        "--history-days",
+        type=int,
+        default=int(os.getenv("RELATIVE_SYNC_HISTORY_DAYS", str(DEFAULT_RELATIVE_HISTORY_DAYS))),
+        help="number of recent calendar days used to seed benchmark and industry caches when empty",
+    )
+
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
     predict_parser.add_argument("--horizon", type=int, default=5)
@@ -79,6 +90,8 @@ def main() -> None:
         _run_sync(parser, args)
     elif args.command == "sync-funds":
         _run_sync_funds(args)
+    elif args.command == "sync-relative":
+        _run_sync_relative(args)
     elif args.command == "predict":
         store = CandleStore(args.db)
         candles = store.get_latest(args.symbol, limit=args.lookback)
@@ -202,6 +215,38 @@ def _run_sync_funds(args: argparse.Namespace) -> None:
                     "skippedDays": len(result.skipped_trade_dates),
                     "providers": list(result.providers),
                     "rows": result.rows,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def _run_sync_relative(args: argparse.Namespace) -> None:
+    store = RelativeStrengthStore(args.relative_db)
+    service = RelativeStrengthSyncService(store=store)
+    symbols = _normalize_symbols(args.symbols)
+    if symbols:
+        result = service.sync_market(history_days=args.history_days, symbols=symbols)
+        mode = "symbols"
+    else:
+        result = service.sync_market(history_days=args.history_days)
+        mode = "market"
+
+    print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "mode": "relative-strength",
+                    "scope": mode,
+                    "symbols": list(result.target_symbols),
+                    "historyDays": args.history_days,
+                    "mappingRows": result.mapping_rows,
+                    "benchmarkCount": len(result.benchmark_labels),
+                    "industryCount": len(result.industry_names),
+                    "rows": result.rows,
+                    "warnings": list(result.warnings),
                 }
             },
             ensure_ascii=False,

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from kronos_mvp.providers import AkShareDailyProvider, BaoStockDailyProvider, ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols, lookup_a_share_name
+from kronos_mvp.providers import AkShareDailyProvider, AkShareRelativeStrengthProvider, BaoStockDailyProvider, ProviderError, _list_symbols_from_akshare, _list_symbols_from_baostock, infer_a_share_market, list_a_share_symbols, lookup_a_share_name
 
 
 class ProviderSymbolListTests(unittest.TestCase):
@@ -314,6 +314,40 @@ class ProviderDailyFetchTests(unittest.TestCase):
         with patch.dict("sys.modules", {"baostock": fake_bs}):
             with self.assertRaisesRegex(ProviderError, "does not support BJ"):
                 BaoStockDailyProvider().fetch_daily("920001")
+
+    def test_relative_strength_provider_zero_pads_constituent_codes(self):
+        fake_ak = SimpleNamespace(
+            stock_board_industry_name_em=lambda: pd.DataFrame({"板块名称": ["家电行业"]}),
+            stock_board_industry_cons_em=lambda symbol: pd.DataFrame({"代码": [600835.0, 1, "300001"]}),
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            mappings = AkShareRelativeStrengthProvider().fetch_industry_mappings()
+
+        self.assertEqual([item.symbol for item in mappings], ["600835", "000001", "300001"])
+        self.assertTrue(all(item.industry_name == "家电行业" for item in mappings))
+
+    def test_relative_strength_provider_reads_index_daily_from_akshare(self):
+        fake_ak = SimpleNamespace(
+            stock_zh_index_daily_em=lambda symbol, start_date, end_date: pd.DataFrame(
+                {
+                    "日期": ["2026-05-22", "2026-05-23"],
+                    "开盘": [3200.0, 3210.0],
+                    "最高": [3230.0, 3240.0],
+                    "最低": [3190.0, 3205.0],
+                    "收盘": [3220.0, 3235.0],
+                    "成交量": [1000000, 1100000],
+                    "成交额": [200000000, 210000000],
+                }
+            )
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareRelativeStrengthProvider().fetch_index_daily("sh000300", start_date=date(2026, 5, 23))
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].date, date(2026, 5, 23))
+        self.assertEqual(result[0].close, 3235.0)
 
     def test_baostock_daily_fetch_reuses_login_session(self):
         class FakeLoginResult:

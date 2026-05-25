@@ -26,6 +26,7 @@ from .funds import (
 from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers, lookup_a_share_name
+from .relative_strength import RelativeStrengthStore, RelativeStrengthSyncService, build_relative_strength_analysis
 from .storage import CandleStore
 from .sync import DataSyncService
 from .accounts import (
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
     _configure_cors(app)
     store = CandleStore(os.getenv("KLINE_DB_PATH", "data/candles.db"))
     fund_store = FundFactorStore(os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
+    relative_store = RelativeStrengthStore(os.getenv("RELATIVE_DB_PATH", "data/relative_strength.db"))
     account_store = AccountStore(_account_db_path(store))
     account_store.bootstrap_admin(os.getenv("ADMIN_USERNAME", "admin"), os.getenv("ADMIN_PASSWORD") or _access_password())
     payment_client = SailaPayClient()
@@ -115,11 +117,13 @@ def create_app() -> FastAPI:
     def data_freshness() -> dict[str, object]:
         kline_updated_at = store.get_last_updated_at()
         fund_updated_at = fund_store.get_last_updated_at()
+        relative_updated_at = relative_store.get_last_updated_at()
         latest_trade_date = fund_store.get_latest_trade_date()
         return {
-            "updatedAt": _latest_timestamp(kline_updated_at, fund_updated_at),
+            "updatedAt": _latest_timestamp(kline_updated_at, fund_updated_at, relative_updated_at),
             "klineUpdatedAt": kline_updated_at,
             "fundUpdatedAt": fund_updated_at,
+            "relativeUpdatedAt": relative_updated_at,
             "fundLatestTradeDate": latest_trade_date.isoformat() if latest_trade_date is not None else None,
         }
 
@@ -217,8 +221,10 @@ def create_app() -> FastAPI:
 
         try:
             sync_info = {"attempted": False, "updated": False}
+            relative_sync = {"attempted": False, "updated": False}
             if auto_sync:
                 sync_info = _auto_sync_symbol(store, symbol)
+                relative_sync = _auto_sync_relative_strength(relative_store, symbol)
 
             candles = store.get_latest(symbol, limit=lookback)
             if len(candles) < 2:
@@ -237,9 +243,15 @@ def create_app() -> FastAPI:
                 **result.to_dict(),
                 "symbolName": symbol_name,
                 "history": [candle.to_dict() for candle in candles[-120:]],
-                "analysis": _build_prediction_analysis(candles, result, horizon),
+                "analysis": _build_prediction_analysis(
+                    candles,
+                    result,
+                    horizon,
+                    symbol=symbol,
+                    relative_strength_store=relative_store,
+                ),
                 "lookback": len(candles),
-                "sync": sync_info,
+                "sync": {**sync_info, "relativeStrength": relative_sync},
                 "billing": {**usage, "me": public_user(fresh_user) if fresh_user is not None else None},
             }
         except HTTPException as exc:
@@ -593,9 +605,17 @@ def _request_is_https(request: Request) -> bool:
     return request.url.scheme == "https" or forwarded_proto == "https"
 
 
-def _build_prediction_analysis(candles: list, result, horizon: int) -> dict[str, object]:
+def _build_prediction_analysis(
+    candles: list,
+    result,
+    horizon: int,
+    symbol: str | None = None,
+    relative_strength_store: RelativeStrengthStore | None = None,
+) -> dict[str, object]:
     last_candle = candles[-1]
     last_close = float(last_candle.close)
+    price_volume_confirmation = _build_price_volume_confirmation(candles)
+    relative_strength = build_relative_strength_analysis(symbol or result.symbol, candles, relative_strength_store)
 
     end_closes: list[float] = []
     projected_volatilities: list[float] = []
@@ -623,6 +643,8 @@ def _build_prediction_analysis(candles: list, result, horizon: int) -> dict[str,
             "meanProjectedReturn": 0.0,
             "projectedCloseLow": last_close,
             "projectedCloseHigh": last_close,
+            "priceVolumeConfirmation": price_volume_confirmation,
+            "relativeStrength": relative_strength,
         }
 
     path_count = len(end_closes)
@@ -657,7 +679,277 @@ def _build_prediction_analysis(candles: list, result, horizon: int) -> dict[str,
         "meanProjectedReturn": mean_projected_return,
         "projectedCloseLow": min(end_closes),
         "projectedCloseHigh": max(end_closes),
+        "priceVolumeConfirmation": price_volume_confirmation,
+        "relativeStrength": relative_strength,
     }
+
+
+def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
+    last_candle = candles[-1]
+    last_open = float(last_candle.open)
+    last_high = float(last_candle.high)
+    last_low = float(last_candle.low)
+    last_close = float(last_candle.close)
+    last_volume = float(last_candle.volume or 0.0)
+
+    closes = [float(candle.close) for candle in candles]
+    highs = [float(candle.high) for candle in candles]
+    lows = [float(candle.low) for candle in candles]
+    volumes = [float(getattr(candle, "volume", 0.0) or 0.0) for candle in candles]
+
+    previous_close = closes[-2] if len(closes) >= 2 else None
+    previous_high = max(highs[:-1]) if len(highs) >= 2 else None
+    previous_low = min(lows[:-1]) if len(lows) >= 2 else None
+    ma5 = _window_average(closes, 5)
+    ma10 = _window_average(closes, 10)
+    ma20 = _window_average(closes, 20)
+    volume_ratio5 = _volume_ratio(volumes, 5)
+    volume_ratio10 = _volume_ratio(volumes, 10)
+    close_position = _close_position(last_low, last_high, last_close)
+    body_ratio = _body_ratio(last_open, last_close, last_low, last_high)
+
+    trend_component = _price_trend_component(
+        last_close,
+        previous_close,
+        {"ma5": ma5, "ma10": ma10, "ma20": ma20},
+    )
+    breakout_component = _price_breakout_component(last_close, previous_high, previous_low)
+    volume_component = _price_volume_component(last_open, last_close, last_volume, volume_ratio5, volume_ratio10)
+    structure_component = _candle_structure_component(last_open, last_close, last_low, last_high)
+    components = [trend_component, breakout_component, volume_component, structure_component]
+
+    score = int(round(sum(int(component["score"]) for component in components) / (len(components) * 25) * 100))
+    signal, signal_label = _signal_from_confirmation_score(score)
+    detail = _build_price_volume_detail(
+        signal_label,
+        close_position,
+        volume_ratio5,
+        volume_ratio10,
+        trend_component,
+        breakout_component,
+        volume_component,
+        structure_component,
+    )
+
+    return {
+        "score": score,
+        "signal": signal,
+        "signalLabel": signal_label,
+        "detail": detail,
+        "components": components,
+        "metrics": {
+            "ma5": ma5,
+            "ma10": ma10,
+            "ma20": ma20,
+            "volumeRatio5": volume_ratio5,
+            "volumeRatio10": volume_ratio10,
+            "closePosition": close_position,
+            "bodyRatio": body_ratio,
+            "breakoutHigh": previous_high,
+            "breakdownLow": previous_low,
+            "isBreakout": previous_high is not None and last_close > previous_high,
+            "isBreakdown": previous_low is not None and last_close < previous_low,
+            "lastVolume": last_volume,
+        },
+    }
+
+
+def _price_trend_component(
+    last_close: float,
+    previous_close: float | None,
+    moving_averages: dict[str, float | None],
+) -> dict[str, object]:
+    available = [(name, value) for name, value in moving_averages.items() if value is not None]
+    if available:
+        above = [name for name, value in available if last_close >= float(value)]
+        if len(above) == len(available):
+            score, verdict = 25, "收盘站上可用均线"
+        elif len(above) >= max(1, len(available) - 1):
+            score, verdict = 18, "收盘大体站上短期均线"
+        elif above:
+            score, verdict = 12, "均线方向分化"
+        elif previous_close is not None and last_close >= previous_close:
+            score, verdict = 8, "价格回升但仍受均线压制"
+        else:
+            score, verdict = 0, "收盘仍压在均线下方"
+        return {
+            "label": "均线位置",
+            "score": score,
+            "verdict": verdict,
+            "detail": f"{verdict}。",
+        }
+
+    if previous_close is None:
+        return {
+            "label": "均线位置",
+            "score": 12,
+            "verdict": "样本不足",
+            "detail": "均线样本不足，先不据此放大结论。",
+        }
+
+    if last_close > previous_close:
+        score, verdict = 18, "最新收盘高于前收"
+    elif last_close < previous_close:
+        score, verdict = 6, "最新收盘低于前收"
+    else:
+        score, verdict = 12, "最新收盘与前收持平"
+    return {
+        "label": "均线位置",
+        "score": score,
+        "verdict": verdict,
+        "detail": f"{verdict}。",
+    }
+
+
+def _price_breakout_component(last_close: float, previous_high: float | None, previous_low: float | None) -> dict[str, object]:
+    if previous_high is None or previous_low is None:
+        return {
+            "label": "区间突破",
+            "score": 12,
+            "verdict": "样本不足",
+            "detail": "近期区间样本不足，暂不放大突破判断。",
+        }
+
+    if last_close > previous_high:
+        score, verdict = 25, "收盘突破近期高位"
+    elif last_close >= previous_high * 0.985:
+        score, verdict = 18, "收盘接近近期高位"
+    elif last_close < previous_low:
+        score, verdict = 0, "收盘跌破近期低位"
+    elif last_close <= previous_low * 1.015:
+        score, verdict = 6, "收盘靠近近期低位"
+    else:
+        score, verdict = 12, "收盘仍在近期区间内"
+
+    return {
+        "label": "区间突破",
+        "score": score,
+        "verdict": verdict,
+        "detail": f"{verdict}。",
+    }
+
+
+def _price_volume_component(
+    last_open: float,
+    last_close: float,
+    last_volume: float,
+    volume_ratio5: float | None,
+    volume_ratio10: float | None,
+) -> dict[str, object]:
+    reference_ratio = volume_ratio5 if volume_ratio5 is not None else volume_ratio10
+    if reference_ratio is None or last_volume <= 0:
+        return {
+            "label": "量能确认",
+            "score": 12,
+            "verdict": "量能样本不足",
+            "detail": "成交量样本不足，暂不据此强化方向。",
+        }
+
+    if reference_ratio >= 1.5 and last_close >= last_open:
+        score, verdict = 25, "放量上行"
+    elif reference_ratio >= 1.15 and last_close >= last_open:
+        score, verdict = 18, "温和放量"
+    elif reference_ratio >= 0.85:
+        score, verdict = 12, "量能基本持平"
+    elif reference_ratio >= 0.65:
+        score, verdict = 6, "量能偏弱"
+    else:
+        score, verdict = 0, "明显缩量"
+
+    return {
+        "label": "量能确认",
+        "score": score,
+        "verdict": verdict,
+        "detail": f"{verdict}。",
+    }
+
+
+def _candle_structure_component(last_open: float, last_close: float, last_low: float, last_high: float) -> dict[str, object]:
+    close_position = _close_position(last_low, last_high, last_close)
+    body_ratio = _body_ratio(last_open, last_close, last_low, last_high)
+    if close_position >= 0.72 and last_close >= last_open and body_ratio >= 0.35:
+        score, verdict = 25, "收盘贴近当日高位"
+    elif close_position >= 0.58 and last_close >= last_open:
+        score, verdict = 18, "收盘位于日内强势区"
+    elif close_position >= 0.42:
+        score, verdict = 12, "收盘位于日内中位"
+    elif close_position >= 0.25:
+        score, verdict = 6, "收盘偏向日内下沿"
+    else:
+        score, verdict = 0, "收盘接近日内低位"
+
+    return {
+        "label": "收盘质量",
+        "score": score,
+        "verdict": verdict,
+        "detail": f"{verdict}。",
+    }
+
+
+def _build_price_volume_detail(
+    signal_label: str,
+    close_position: float,
+    volume_ratio5: float | None,
+    volume_ratio10: float | None,
+    trend_component: dict[str, object],
+    breakout_component: dict[str, object],
+    volume_component: dict[str, object],
+    structure_component: dict[str, object],
+) -> str:
+    if volume_ratio5 is not None:
+        volume_text = f"量能约为近 5 日均量的 {volume_ratio5:.2f} 倍"
+    elif volume_ratio10 is not None:
+        volume_text = f"量能约为近 10 日均量的 {volume_ratio10:.2f} 倍"
+    else:
+        volume_text = "量能样本暂不足"
+
+    return (
+        f"价量确认：{signal_label}。"
+        f"{trend_component['verdict']}；{breakout_component['verdict']}；{volume_component['verdict']}，{volume_text}；"
+        f"{structure_component['verdict']}，收盘位于当日振幅的 {close_position * 100:.0f}% 附近。"
+    )
+
+
+def _window_average(values: list[float], window: int) -> float | None:
+    if len(values) < window or window <= 0:
+        return None
+    sample = values[-window:]
+    return sum(sample) / len(sample)
+
+
+def _volume_ratio(volumes: list[float], window: int) -> float | None:
+    if len(volumes) <= 1 or window <= 0:
+        return None
+    previous_values = volumes[:-1]
+    sample = previous_values[-window:]
+    if not sample:
+        return None
+    baseline = sum(sample) / len(sample)
+    if baseline <= 0:
+        return None
+    return volumes[-1] / baseline
+
+
+def _close_position(low: float, high: float, close: float) -> float:
+    span = high - low
+    if span <= 0:
+        return 0.5
+    return max(0.0, min(1.0, (close - low) / span))
+
+
+def _body_ratio(open_price: float, close_price: float, low: float, high: float) -> float:
+    span = high - low
+    if span <= 0:
+        return 0.0
+    return abs(close_price - open_price) / span
+
+
+def _signal_from_confirmation_score(score: int) -> tuple[str, str]:
+    if score >= 65:
+        return "bullish", "价量偏强"
+    if score <= 35:
+        return "bearish", "价量偏弱"
+    return "neutral", "价量中性"
 
 
 def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
@@ -669,6 +961,23 @@ def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
             "updated": True,
             "provider": result.provider,
             "rows": result.rows,
+        }
+    except ProviderError as exc:
+        return {
+            "attempted": True,
+            "updated": False,
+            "warning": str(exc),
+        }
+
+
+def _auto_sync_relative_strength(store: RelativeStrengthStore, symbol: str) -> dict[str, object]:
+    service = RelativeStrengthSyncService(store=store)
+    try:
+        result = service.sync_symbol(symbol)
+        return {
+            "attempted": True,
+            "updated": bool(result.rows or result.mapping_rows),
+            **result.to_dict(),
         }
     except ProviderError as exc:
         return {

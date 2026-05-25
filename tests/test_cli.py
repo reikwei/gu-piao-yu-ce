@@ -36,6 +36,45 @@ class CliTests(unittest.TestCase):
         self.assertIn('"rows": 3800', stdout.getvalue())
         self.assertIn('"requestedDays": 15', stdout.getvalue())
 
+    def test_sync_relative_emits_summary(self):
+        sync_service = Mock()
+        sync_service.sync_market.return_value.to_dict.return_value = {
+            "provider": "akshare",
+            "targetSymbols": ["600835"],
+            "benchmarkLabels": ["上证指数"],
+            "industryNames": ["家电行业"],
+            "mappingRows": 4120,
+            "rows": 186,
+            "warnings": [],
+        }
+        sync_service.sync_market.return_value.target_symbols = ("600835",)
+        sync_service.sync_market.return_value.benchmark_labels = ("上证指数",)
+        sync_service.sync_market.return_value.industry_names = ("家电行业",)
+        sync_service.sync_market.return_value.mapping_rows = 4120
+        sync_service.sync_market.return_value.rows = 186
+        sync_service.sync_market.return_value.warnings = ()
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv",
+            [
+                "prog",
+                "--relative-db",
+                str(Path(tmp) / "relative_strength.db"),
+                "sync-relative",
+                "600835",
+                "--history-days",
+                "45",
+            ],
+        ), patch("kronos_mvp.cli.RelativeStrengthStore"), patch(
+            "kronos_mvp.cli.RelativeStrengthSyncService", return_value=sync_service
+        ), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        sync_service.sync_market.assert_called_once_with(history_days=45, symbols=["600835"])
+        self.assertIn('"mode": "relative-strength"', stdout.getvalue())
+        self.assertIn('"mappingRows": 4120', stdout.getvalue())
+        self.assertIn('"industryCount": 1', stdout.getvalue())
+
     def test_sync_all_uses_market_symbol_list(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [

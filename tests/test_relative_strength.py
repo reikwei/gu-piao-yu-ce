@@ -1,0 +1,151 @@
+import tempfile
+import unittest
+from datetime import date
+from pathlib import Path
+
+from kronos_mvp.models import Candle
+from kronos_mvp.relative_strength import (
+    RelativeStrengthStore,
+    RelativeStrengthSyncService,
+    SymbolIndustry,
+    build_relative_strength_analysis,
+    industry_key_from_name,
+)
+
+
+class _Mapping:
+    def __init__(self, symbol: str, industry_name: str):
+        self.symbol = symbol
+        self.industry_name = industry_name
+
+
+class MemoryRelativeStrengthProvider:
+    name = "memory"
+
+    def __init__(self):
+        self.index_calls: list[tuple[str, date | None]] = []
+        self.industry_calls: list[tuple[str, date | None]] = []
+
+    def fetch_index_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        self.index_calls.append((symbol, start_date))
+        return [
+            Candle(date=date(2026, 5, 22), open=3200, high=3230, low=3190, close=3220, volume=1_000_000, amount=2_000_000),
+            Candle(date=date(2026, 5, 23), open=3210, high=3240, low=3200, close=3235, volume=1_100_000, amount=2_100_000),
+        ]
+
+    def fetch_industry_mappings(self):
+        return [_Mapping(symbol="600835", industry_name="家电行业")]
+
+    def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
+        self.industry_calls.append((industry_name, start_date))
+        return [
+            Candle(date=date(2026, 5, 22), open=1500, high=1510, low=1490, close=1502, volume=500_000, amount=900_000),
+            Candle(date=date(2026, 5, 23), open=1504, high=1518, low=1500, close=1512, volume=520_000, amount=920_000),
+        ]
+
+
+def _sample_stock_candles() -> list[Candle]:
+    closes = [10.00, 10.18, 10.32, 10.50, 10.70, 10.92, 11.08, 11.26, 11.48, 11.72, 11.96, 12.22, 12.50, 12.78, 13.05, 13.36, 13.72, 14.08, 14.46, 14.88, 15.30]
+    candles: list[Candle] = []
+    for day, close in enumerate(closes, start=1):
+        candles.append(
+            Candle(
+                date=date(2026, 5, day),
+                open=round(close * 0.99, 2),
+                high=round(close * 1.02, 2),
+                low=round(close * 0.98, 2),
+                close=close,
+                volume=1000 + day * 10,
+                amount=close * (1000 + day * 10),
+            )
+        )
+    return candles
+
+
+def _sample_reference_candles(start_close: float, daily_step: float) -> list[Candle]:
+    candles: list[Candle] = []
+    close = start_close
+    for day in range(1, 22):
+        candles.append(
+            Candle(
+                date=date(2026, 5, day),
+                open=round(close * 0.995, 2),
+                high=round(close * 1.01, 2),
+                low=round(close * 0.99, 2),
+                close=round(close, 2),
+                volume=800 + day * 8,
+                amount=close * (800 + day * 8),
+            )
+        )
+        close += daily_step
+    return candles
+
+
+class RelativeStrengthStoreTests(unittest.TestCase):
+    def test_upsert_and_read_symbol_industry_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("家电行业"),
+                        industry_name="家电行业",
+                        source="akshare",
+                        updated_at="2026-05-25T16:30:00+08:00",
+                    )
+                ]
+            )
+
+            mapping = store.get_symbol_industry("600835")
+
+        self.assertIsNotNone(mapping)
+        self.assertEqual(mapping.industry_name, "家电行业")
+        self.assertEqual(mapping.industry_key, "industry:家电行业")
+
+
+class RelativeStrengthSyncServiceTests(unittest.TestCase):
+    def test_sync_symbol_writes_benchmark_and_industry_candles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider()
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+
+            result = service.sync_symbol("600835", history_days=20)
+
+            self.assertEqual(result.provider, "memory")
+            self.assertEqual(result.mapping_rows, 1)
+            self.assertEqual(result.rows, 4)
+            self.assertEqual(store.get_symbol_industry("600835").industry_name, "家电行业")
+            self.assertEqual(store.get_latest("benchmark:sh", limit=1)[0].close, 3235)
+            self.assertEqual(store.get_latest("industry:家电行业", limit=1)[0].close, 1512)
+
+
+class RelativeStrengthAnalysisTests(unittest.TestCase):
+    def test_build_relative_strength_analysis_flags_outperformance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("家电行业"),
+                        industry_name="家电行业",
+                        source="akshare",
+                        updated_at="2026-05-25T16:30:00+08:00",
+                    )
+                ]
+            )
+            store.upsert_candles("benchmark:sh", _sample_reference_candles(10.0, 0.08))
+            store.upsert_candles("industry:家电行业", _sample_reference_candles(10.0, 0.11))
+
+            analysis = build_relative_strength_analysis("600835", _sample_stock_candles(), store)
+
+        self.assertTrue(analysis["available"])
+        self.assertEqual(analysis["signal"], "bullish")
+        self.assertGreaterEqual(int(analysis["score"]), 65)
+        self.assertIn("相对强弱：相对偏强", str(analysis["detail"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

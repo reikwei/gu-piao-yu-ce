@@ -1445,7 +1445,7 @@
 
           <article class='card detail-card'>
             <h2>综合结论</h2>
-            <p id='combined-summary'>当前先显示 Kronos 主模型判断；资金面数据加载后，会补充资金面修正后的综合解释。</p>
+            <p id='combined-summary'>当前先显示 Kronos 主模型与价量确认；资金面数据加载后，会补充带冲突裁决分的综合解释。</p>
             <div class='scenario-list' id='combined-conclusion-list'>
               <div class='scenario-row neutral'>
                 <header>
@@ -1460,6 +1460,13 @@
                   <span class='scenario-value'>--</span>
                 </header>
                 <p>等待加载资金面分析。</p>
+              </div>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>价量确认层</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>等待预测完成后展示收盘位置、量能与突破确认。</p>
               </div>
               <div class='scenario-row neutral'>
                 <header>
@@ -2019,7 +2026,7 @@
         renderDetail(data, analysis, envelope);
         renderFundAnalysisPlaceholder(data.symbol);
         renderCombinedConclusion(analysis, null);
-        void loadFundAnalysis({ autoSync: true });
+        void loadFundAnalysis({ autoSync: false });
       } catch (error) {
         if (error && error.authRequired) {
           resetPredictFailureState();
@@ -2250,13 +2257,19 @@
 
     function renderCombinedConclusion(kronosAnalysis, fundAnalysis, fundError = '') {
       const list = document.getElementById('combined-conclusion-list');
+      const priceVolume = kronosAnalysis && kronosAnalysis.priceVolumeConfirmation ? kronosAnalysis.priceVolumeConfirmation : null;
+      const relativeStrength = kronosAnalysis && kronosAnalysis.relativeStrength ? kronosAnalysis.relativeStrength : null;
       const kronosLabel = kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--';
       const fundLabel = fundAnalysis ? `${fundAnalysis.signalLabel || '中性'} ${fundAnalysis.score || 0}/100` : '未加载';
+      const priceLabel = priceVolume ? `${priceVolume.signalLabel || '价量中性'} ${priceVolume.score || 0}/100` : '未加载';
+      const relativeLabel = relativeStrength ? `${relativeStrength.signalLabel || '待同步'} ${relativeStrength.score || 50}/100` : '未加载';
       const combined = buildCombinedNarrative(kronosAnalysis, fundAnalysis, fundError);
       document.getElementById('combined-summary').textContent = combined.summary;
       list.innerHTML = [
         `<div class='scenario-row neutral'><header><span class='scenario-title'>Kronos 主模型</span><span class='scenario-value'>${escapeHtml(kronosLabel)}</span></header><p>${escapeHtml(buildKronosSummary(kronosAnalysis))}</p></div>`,
         `<div class='scenario-row neutral'><header><span class='scenario-title'>资金面因子层</span><span class='scenario-value'>${escapeHtml(fundLabel)}</span></header><p>${escapeHtml(buildFundSummary(fundAnalysis, fundError))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>价量确认层</span><span class='scenario-value'>${escapeHtml(priceLabel)}</span></header><p>${escapeHtml(buildPriceVolumeSummary(priceVolume))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>相对强弱层</span><span class='scenario-value'>${escapeHtml(relativeLabel)}</span></header><p>${escapeHtml(buildRelativeStrengthSummary(relativeStrength))}</p></div>`,
         `<div class='scenario-row ${combined.tone}'><header><span class='scenario-title'>综合判断</span><span class='scenario-value'>${escapeHtml(combined.label)}</span></header><p>${escapeHtml(combined.detail)}</p></div>`,
       ].join('');
     }
@@ -2275,6 +2288,107 @@
       return analysis.summary || `资金面评分 ${analysis.score || 0}/100，结论 ${analysis.signalLabel || '中性'}。`;
     }
 
+    function buildPriceVolumeSummary(analysis) {
+      if (!analysis) {
+        return '等待预测完成后展示收盘位置、量能和突破确认。';
+      }
+      return analysis.detail || `价量确认 ${analysis.signalLabel || '价量中性'}，评分 ${analysis.score || 0}/100。`;
+    }
+
+    function buildRelativeStrengthSummary(analysis) {
+      if (!analysis) {
+        return '等待指数、行业映射和行业K线同步后展示相对强弱。';
+      }
+      return analysis.detail || `相对强弱 ${analysis.signalLabel || '待同步'}，评分 ${analysis.score || 50}/100。`;
+    }
+
+    function signalBias(signal) {
+      if (signal === 'bullish') {
+        return 1;
+      }
+      if (signal === 'bearish') {
+        return -1;
+      }
+      return 0;
+    }
+
+    function buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength) {
+      const contributors = [];
+      if (kronosAnalysis) {
+        contributors.push({
+          bias: signalBias(kronosAnalysis.signal),
+          strength: Math.max(0.18, Math.min(1, Number(kronosAnalysis.confidence || 0))),
+          weight: 0.42,
+        });
+      }
+      if (fundAnalysis) {
+        const strength = Math.min(1, Math.abs((Number(fundAnalysis.score || 50) - 50) / 50));
+        contributors.push({
+          bias: signalBias(fundAnalysis.signal),
+          strength: Math.max(0.1, strength),
+          weight: 0.28,
+        });
+      }
+      if (priceVolume) {
+        const strength = Math.min(1, Math.abs((Number(priceVolume.score || 50) - 50) / 50));
+        contributors.push({
+          bias: signalBias(priceVolume.signal),
+          strength: Math.max(0.1, strength),
+          weight: 0.15,
+        });
+      }
+      if (relativeStrength && relativeStrength.available !== false) {
+        const strength = Math.min(1, Math.abs((Number(relativeStrength.score || 50) - 50) / 50));
+        contributors.push({
+          bias: signalBias(relativeStrength.signal),
+          strength: Math.max(0.1, strength),
+          weight: 0.15,
+        });
+      }
+
+      if (!contributors.length) {
+        return { score: 50, label: '--', signal: 'neutral', tone: 'neutral' };
+      }
+
+      const totalWeight = contributors.reduce((sum, item) => sum + item.weight, 0);
+      const netBias = contributors.reduce((sum, item) => sum + item.bias * item.strength * item.weight, 0) / totalWeight;
+      const score = Math.round(Math.max(0, Math.min(100, 50 + netBias * 50)));
+      if (score >= 70) {
+        return { score, label: '偏强', signal: 'bullish', tone: 'bullish' };
+      }
+      if (score >= 58) {
+        return { score, label: '偏多', signal: 'bullish', tone: 'bullish' };
+      }
+      if (score > 42) {
+        return { score, label: '谨慎', signal: 'neutral', tone: 'neutral' };
+      }
+      if (score > 30) {
+        return { score, label: '偏空', signal: 'bearish', tone: 'bearish' };
+      }
+      return { score, label: '偏弱', signal: 'bearish', tone: 'bearish' };
+    }
+
+    function sideSupport(targetSignal, priceSignal, relativeSignal) {
+      const layers = [];
+      if (targetSignal && targetSignal !== 'neutral' && priceSignal === targetSignal) {
+        layers.push('价量确认');
+      }
+      if (targetSignal && targetSignal !== 'neutral' && relativeSignal === targetSignal) {
+        layers.push('相对强弱');
+      }
+      return layers;
+    }
+
+    function formatLayerNames(layers) {
+      if (!layers.length) {
+        return '';
+      }
+      if (layers.length === 1) {
+        return layers[0];
+      }
+      return `${layers.slice(0, -1).join('、')}和${layers[layers.length - 1]}`;
+    }
+
     function buildCombinedNarrative(kronosAnalysis, fundAnalysis, fundError) {
       if (!kronosAnalysis) {
         return {
@@ -2284,75 +2398,62 @@
           detail: '当前还没有 Kronos 主模型结果。',
         };
       }
+      const priceVolume = kronosAnalysis.priceVolumeConfirmation || null;
+      const relativeStrength = kronosAnalysis.relativeStrength || null;
+      const verdict = buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength);
       if (!fundAnalysis) {
         return {
-          tone: 'neutral',
-          label: kronosAnalysis.signalLabel || '震荡',
-          summary: fundError || '当前仍以 Kronos 主模型为主；资金面数据加载后会补充综合修正。',
-          detail: `主模型当前判断为${kronosAnalysis.signalLabel || '震荡'}，资金面尚未加载，暂不调整置信度。`,
+          tone: verdict.tone,
+          label: `${verdict.label} ${verdict.score}/100`,
+          summary: fundError
+            ? `${fundError} 当前先参考 Kronos、价量确认和相对强弱，临时裁决分 ${verdict.score}/100。`
+            : `当前先参考 Kronos、价量确认和相对强弱，临时裁决分 ${verdict.score}/100；资金面加载后会补充最终修正。`,
+          detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 主模型当前判断为${kronosAnalysis.signalLabel || '震荡'}，先不单靠一层信号放大结论。`.trim(),
         };
       }
 
       const kronosSignal = kronosAnalysis.signal || 'neutral';
       const fundSignal = fundAnalysis.signal || 'neutral';
+      const priceSignal = priceVolume ? priceVolume.signal || 'neutral' : 'neutral';
+      const relativeSignal = relativeStrength ? relativeStrength.signal || 'neutral' : 'neutral';
       const fundPattern = fundAnalysis.trendProfile ? fundAnalysis.trendProfile.label || '' : '';
-      const sustainedTrend = fundPattern === '持续趋势';
-      const singleDayAnomaly = fundPattern === '单日异动';
+      const directConflict = signalBias(kronosSignal) !== 0
+        && signalBias(fundSignal) !== 0
+        && signalBias(kronosSignal) !== signalBias(fundSignal);
+      const patternHint = fundPattern ? `资金面当前更像${fundPattern}。` : '';
+      const kronosSupport = sideSupport(kronosSignal, priceSignal, relativeSignal);
+      const fundSupport = sideSupport(fundSignal, priceSignal, relativeSignal);
 
-      if (kronosSignal === 'bullish' && fundSignal === 'bullish') {
+      if (directConflict) {
+        if (kronosSupport.length > fundSupport.length) {
+          return {
+            tone: verdict.tone,
+            label: `${verdict.label} ${verdict.score}/100`,
+            summary: `Kronos ${kronosAnalysis.signalLabel || '震荡'}、资金面${fundAnalysis.signalLabel || '中性'}，且${formatLayerNames(kronosSupport)}站在主模型一侧，冲突裁决分 ${verdict.score}/100。`,
+            detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} ${patternHint} 当前先按 ${verdict.label} 处理，但仍要观察资金面后续是否修复。`.trim(),
+          };
+        }
+        if (fundSupport.length > kronosSupport.length) {
+          return {
+            tone: verdict.tone,
+            label: `${verdict.label} ${verdict.score}/100`,
+            summary: `Kronos ${kronosAnalysis.signalLabel || '震荡'}、资金面${fundAnalysis.signalLabel || '中性'}，且${formatLayerNames(fundSupport)}站在资金面一侧，冲突裁决分 ${verdict.score}/100。`,
+            detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} ${patternHint} 当前更适合先下调对主模型单边结论的置信度。`.trim(),
+          };
+        }
         return {
-          tone: 'bullish',
-          label: sustainedTrend ? '偏强' : '偏强待确认',
-          summary: sustainedTrend ? 'Kronos 看多，资金面属于持续趋势，综合判断上调置信度。' : 'Kronos 看多，资金面当前偏多，但更像单日异动。',
-          detail: sustainedTrend ? '下周偏强，上涨概率维持偏高，资金净流入与融资趋势形成同向支撑。' : '主模型仍偏强，但资金面还没有形成持续共振，先不要把单日放量当成稳定趋势。',
-        };
-      }
-      if (kronosSignal === 'bearish' && fundSignal === 'bearish') {
-        return {
-          tone: 'bearish',
-          label: sustainedTrend ? '偏弱' : '偏弱待确认',
-          summary: sustainedTrend ? 'Kronos 看空，资金面属于持续走弱，综合判断上调看弱置信度。' : 'Kronos 看空，资金面偏弱，但仍要防止只是单日异动。',
-          detail: sustainedTrend ? '下周偏弱，主模型方向与资金面共振，短线承压概率较高。' : '主模型方向偏弱，但资金面持续性还不够强，暂时不要过度放大单日走弱。',
-        };
-      }
-      if (kronosSignal === 'bullish' && fundSignal === 'bearish') {
-        return {
-          tone: 'neutral',
-          label: '冲突',
-          summary: singleDayAnomaly ? 'Kronos 看多，资金面偏空但更像单日异动，综合判断先转谨慎。' : 'Kronos 看多，但资金面偏空，综合判断转为谨慎。',
-          detail: singleDayAnomaly ? '方向仍偏强，不过资金面当日扰动和主模型相反，先观察后续是否继续流出。' : '方向仍偏强，但资金面明显冲突，建议下调对上涨路径的置信度。',
-        };
-      }
-      if (kronosSignal === 'bearish' && fundSignal === 'bullish') {
-        return {
-          tone: 'neutral',
-          label: '冲突',
-          summary: singleDayAnomaly ? 'Kronos 看空，但资金面偏多且更像单日异动，综合判断提示先观察。' : 'Kronos 看空，但资金面偏多，综合判断提示信号冲突。',
-          detail: singleDayAnomaly ? '主模型方向偏弱，但资金面只是当日回流，先观察是否能延续成持续趋势。' : '主模型方向偏弱，但资金面尚有承接，需要谨慎看待单边下跌结论。',
-        };
-      }
-      if (kronosSignal === 'neutral' && fundSignal === 'bullish') {
-        return {
-          tone: 'bullish',
-          label: '震荡偏强',
-          summary: 'Kronos 偏震荡，资金面偏多，综合判断转为震荡偏强。',
-          detail: '主模型没有给出明确单边结论，但资金面改善，短期更接近震荡偏强。',
-        };
-      }
-      if (kronosSignal === 'neutral' && fundSignal === 'bearish') {
-        return {
-          tone: 'bearish',
-          label: '震荡偏弱',
-          summary: 'Kronos 偏震荡，资金面偏空，综合判断转为震荡偏弱。',
-          detail: '主模型中性，资金面走弱，短线更接近震荡偏弱。',
+          tone: verdict.tone,
+          label: `${verdict.label} ${verdict.score}/100`,
+          summary: `Kronos ${kronosAnalysis.signalLabel || '震荡'} 与资金面${fundAnalysis.signalLabel || '中性'}发生冲突，价量确认和相对强弱没有形成单边站队，冲突裁决分 ${verdict.score}/100。`,
+          detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} ${patternHint} 当前更适合保持谨慎，等待下一交易日继续确认。`.trim(),
         };
       }
 
       return {
-        tone: kronosSignal === 'bullish' ? 'bullish' : kronosSignal === 'bearish' ? 'bearish' : 'neutral',
-        label: kronosAnalysis.signalLabel || '震荡',
-        summary: `Kronos 与资金面没有明显冲突，综合结论维持 ${kronosAnalysis.signalLabel || '震荡'}。`,
-        detail: '资金面作为辅助修正层，没有改变主模型的方向判断。',
+        tone: verdict.tone,
+        label: `${verdict.label} ${verdict.score}/100`,
+        summary: `Kronos、资金面、价量确认与相对强弱没有明显冲突，冲突裁决分 ${verdict.score}/100，综合结论维持 ${verdict.label}。`,
+        detail: `${buildKronosSummary(kronosAnalysis)} ${buildFundSummary(fundAnalysis, fundError)} ${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)}`.trim(),
       };
     }
 
