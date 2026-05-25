@@ -2628,9 +2628,10 @@
           throw error;
         }
         if (!response.ok) {
-          const error = new Error(payload.detail || '请求失败');
+          const fallbackMessage = buildHttpErrorMessage(response.status, text);
+          const error = new Error(payload.detail || fallbackMessage);
           error.statusCode = response.status;
-          error.detail = payload.detail || '';
+          error.detail = payload.detail || fallbackMessage;
           throw error;
         }
         return payload;
@@ -3245,6 +3246,38 @@
         return '预测请求失败，请稍后重试。';
       }
       return message;
+    }
+
+    function buildHttpErrorMessage(statusCode, responseText) {
+      const normalizedStatus = Number(statusCode || 0);
+      const text = String(responseText || '').trim();
+      if (text) {
+        if (text.startsWith('<')) {
+          if (normalizedStatus === 502 || normalizedStatus === 503 || normalizedStatus === 504) {
+            return `预测服务暂时不可用（HTTP ${normalizedStatus}），请稍后重试。`;
+          }
+          if (normalizedStatus >= 500) {
+            return `预测服务内部错误（HTTP ${normalizedStatus}）。`;
+          }
+          return `请求失败（HTTP ${normalizedStatus || '--'}）。`;
+        }
+
+        const compact = text.replace(/\s+/g, ' ').trim();
+        if (compact) {
+          return compact.slice(0, 180);
+        }
+      }
+
+      if (normalizedStatus === 502 || normalizedStatus === 503 || normalizedStatus === 504) {
+        return `预测服务暂时不可用（HTTP ${normalizedStatus}），请稍后重试。`;
+      }
+      if (normalizedStatus >= 500) {
+        return `预测服务内部错误（HTTP ${normalizedStatus || 500}）。`;
+      }
+      if (normalizedStatus >= 400) {
+        return `请求失败（HTTP ${normalizedStatus}）。`;
+      }
+      return '请求失败';
     }
 
     function isPredictionQuotaError(error) {

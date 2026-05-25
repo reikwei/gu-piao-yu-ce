@@ -231,9 +231,9 @@ def create_app() -> FastAPI:
                 if sync_info.get("warning"):
                     raise HTTPException(
                         status_code=502,
-                        detail=f"failed to sync latest data and no usable local K-line data: {sync_info['warning']}",
+                        detail=f"最新数据同步失败，且本地没有可用的K线缓存：{sync_info['warning']}",
                     )
-                raise HTTPException(status_code=404, detail="not enough local K-line data; no cached history was found")
+                raise HTTPException(status_code=404, detail="该股票暂无本地K线数据，请先同步数据后再预测。")
             predictor = _build_predictor()
             result = predictor.predict(symbol, candles, horizon=horizon, paths=paths)
             account_store.mark_prediction_succeeded(int(usage["id"]))
