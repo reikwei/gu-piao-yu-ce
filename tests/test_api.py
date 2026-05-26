@@ -509,6 +509,18 @@ class ApiTests(unittest.TestCase):
             device="cpu",
         )
 
+    def test_startup_prewarms_predictor_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            _test_env(tmp, KRONOS_PREWARM_ON_STARTUP="1"),
+            clear=False,
+        ), patch("kronos_mvp.api._prewarm_predictor") as prewarm:
+            with TestClient(create_app()) as client:
+                response = client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        prewarm.assert_called_once_with()
+
     def test_predict_rate_limit_blocks_second_request_without_consuming_extra_credit(self):
         store = FakeStore()
         predictor = Mock()

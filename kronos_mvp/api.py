@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections import deque
+from contextlib import asynccontextmanager
 import hashlib
 import html
 import hmac
 import json
+import logging
 import os
 from functools import lru_cache
 from math import ceil
@@ -52,6 +54,7 @@ SESSION_COOKIE_NAME = "kronos_session"
 SUPPORTED_PAY_TYPES = {"alipay"}
 DEFAULT_PREDICT_RATE_LIMIT_REQUESTS = 6
 DEFAULT_PREDICT_RATE_LIMIT_WINDOW_SECONDS = 60
+logger = logging.getLogger(__name__)
 
 
 class PredictionRateLimiter:
@@ -139,7 +142,15 @@ def _predict_rate_limit_window_seconds() -> int:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=os.getenv("APP_SITE_TITLE", "土豆A股预测研究"), version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        if _should_prewarm_predictor_on_startup():
+            logger.info("Prewarming Kronos predictor on startup.")
+            _prewarm_predictor()
+            logger.info("Kronos predictor prewarm completed.")
+        yield
+
+    app = FastAPI(title=os.getenv("APP_SITE_TITLE", "土豆A股预测研究"), version="0.1.0", lifespan=lifespan)
     _configure_cors(app)
     app.state.prediction_rate_limiter = PredictionRateLimiter(
         limit=_predict_rate_limit_requests(),
@@ -640,6 +651,21 @@ def _build_predictor() -> KronosPredictor:
         os.getenv("KRONOS_DEVICE", "cpu"),
         id(KronosPredictor),
     )
+
+
+def _should_prewarm_predictor_on_startup() -> bool:
+    value = os.getenv("KRONOS_PREWARM_ON_STARTUP", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _prewarm_predictor() -> KronosPredictor:
+    predictor = _build_predictor()
+    try:
+        predictor._get_upstream_predictor()
+    except Exception:
+        _cached_predictor.cache_clear()
+        raise
+    return predictor
 
 
 def _access_password() -> str:

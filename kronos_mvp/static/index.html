@@ -1527,7 +1527,7 @@
     const detailStatusEl = document.getElementById('detail-status');
     const priceFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const compactFormatter = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
-    const PREDICT_TIMEOUT_MS = 90000;
+    const PREDICT_TIMEOUT_MS = 120000;
     const PREDICT_FAILURE_STORAGE_KEY = 'kronos_predict_failure_count';
     const SCREENSHOT_WATERMARK_TEXT = 'wx：7354280';
     let html2CanvasLoader = null;

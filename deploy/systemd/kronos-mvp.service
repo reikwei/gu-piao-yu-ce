@@ -7,9 +7,11 @@ Type=simple
 User=root
 WorkingDirectory=/home/yupiaoyuce
 EnvironmentFile=/home/yupiaoyuce/.env
+Environment=KRONOS_PREWARM_ON_STARTUP=1
 ExecStart=/home/yupiaoyuce/.venv/bin/python -m kronos_mvp.cli serve --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

@@ -115,7 +115,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_local_api.ps1
 
 当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页只负责输入股票代码；点击“开始预测”后才进入详情页。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。网页预测默认直接读取本地 SQLite 缓存，避免把页面请求绑在实时抓数上；生产数据刷新依赖每日 GitHub Actions，同步失败时不会拖垮前端预测请求。
 
-API 侧现在会在进程内复用同一组 Kronos 模型实例，避免每次预测都重新加载模型；同时 `/api/predict/{symbol}` 默认启用账户级频率限制，环境变量 `PREDICT_RATE_LIMIT_REQUESTS` 与 `PREDICT_RATE_LIMIT_WINDOW_SECONDS` 可调整每个账户在窗口期内的预测次数上限。账号登录入口统一为 `/api/auth/login`；旧的 `/auth/login` 已停用，管理员也应使用同一入口登录，只是默认用户名仍是 `admin`。
+API 侧现在会在进程内复用同一组 Kronos 模型实例，避免每次预测都重新加载模型；同时 `/api/predict/{symbol}` 默认启用账户级频率限制，环境变量 `PREDICT_RATE_LIMIT_REQUESTS` 与 `PREDICT_RATE_LIMIT_WINDOW_SECONDS` 可调整每个账户在窗口期内的预测次数上限。账号登录入口统一为 `/api/auth/login`；旧的 `/auth/login` 已停用，管理员也应使用同一入口登录，只是默认用户名仍是 `admin`。如果部署在 Nginx 反代后，建议把 `KRONOS_PREWARM_ON_STARTUP=1` 打开，让服务在启动阶段完成模型冷加载；反代层也应把 `proxy_read_timeout`/`proxy_send_timeout` 调到至少 180 秒，避免第一次预测或长路径预测在 60 秒默认超时下被提前截断。
 
 如果你希望本地先同步最近半个月交易日的资金面数据，并在后续继续按缺口增量补齐，可以执行：
 
