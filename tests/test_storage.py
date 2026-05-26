@@ -68,6 +68,43 @@ class CandleStoreTests(unittest.TestCase):
             self.assertEqual(candles[0].close, 11)
             self.assertIsNotNone(target.get_last_updated_at())
 
+    def test_replace_symbol_history_deletes_older_rows_not_present_in_refresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+            store.upsert_many(
+                "600519",
+                [
+                    Candle(date=date(2026, 5, 19), open=9, high=11, low=8, close=10, volume=90, amount=900),
+                    Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100),
+                ],
+            )
+
+            replaced = store.replace_symbol_history(
+                "600519",
+                [Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11.2, volume=101, amount=1131)],
+            )
+
+            self.assertEqual(replaced, 1)
+            candles = store.get_latest("600519", limit=10)
+            self.assertEqual(len(candles), 1)
+            self.assertEqual(candles[0].date, date(2026, 5, 20))
+            self.assertEqual(candles[0].close, 11.2)
+
+    def test_get_earliest_date_returns_first_cached_trade_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+            store.upsert_many(
+                "600519",
+                [
+                    Candle(date=date(2026, 5, 20), open=10, high=12, low=9, close=11, volume=100, amount=1100),
+                    Candle(date=date(2026, 5, 19), open=9, high=11, low=8, close=10, volume=90, amount=900),
+                ],
+            )
+
+            earliest = store.get_earliest_date("600519")
+
+            self.assertEqual(earliest, date(2026, 5, 19))
+
 
 if __name__ == "__main__":
     unittest.main()

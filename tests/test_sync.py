@@ -102,6 +102,35 @@ class DataSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.rows, 1)
             self.assertEqual(store.get_latest("600519", limit=1)[0].turnover, 1.82)
 
+    def test_sync_full_refresh_rejects_partial_history_when_provider_starts_later_than_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+            store.upsert_many(
+                "600519",
+                [
+                    Candle(date=date(2026, 5, 20), open=1.0, high=2.0, low=1.0, close=1.5, volume=10, amount=15),
+                    Candle(date=date(2026, 5, 21), open=1.5, high=2.1, low=1.4, close=1.9, volume=11, amount=21),
+                ],
+            )
+            service = DataSyncService(
+                store=store,
+                providers=[
+                    MemoryProvider(
+                        "working",
+                        candles=[
+                            Candle(date=date(2026, 5, 21), open=1.5, high=2.1, low=1.4, close=1.95, volume=11, amount=21)
+                        ],
+                    )
+                ],
+            )
+
+            with self.assertRaisesRegex(ProviderError, "full refresh returned partial history"):
+                service.sync_symbol("600519", full_refresh=True)
+
+            candles = store.get_latest("600519", limit=10)
+            self.assertEqual([candle.date for candle in candles], [date(2026, 5, 20), date(2026, 5, 21)])
+            self.assertEqual(candles[-1].close, 1.9)
+
 
 if __name__ == "__main__":
     unittest.main()

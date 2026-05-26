@@ -110,7 +110,7 @@ def main() -> None:
     elif args.command == "serve":
         import uvicorn
 
-        uvicorn.run("kronos_mvp.api:app", host=args.host, port=args.port, reload=False)
+        uvicorn.run("kronos_mvp.api:create_app", host=args.host, port=args.port, reload=False, factory=True)
     elif args.command == "merge-db":
         _run_merge_db(args)
     elif args.command == "create-admin":

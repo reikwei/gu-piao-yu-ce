@@ -138,6 +138,22 @@ class CliTests(unittest.TestCase):
         sync_service.sync_symbol.assert_called_once_with("600519", full_refresh=True)
         self.assertIn('"fullRefresh": true', stdout.getvalue())
 
+    def test_serve_uses_api_factory(self):
+        fake_uvicorn = Mock()
+
+        with patch("sys.argv", ["prog", "serve", "--host", "0.0.0.0", "--port", "9000"]), patch.dict(
+            "sys.modules", {"uvicorn": fake_uvicorn}
+        ):
+            main()
+
+        fake_uvicorn.run.assert_called_once_with(
+            "kronos_mvp.api:create_app",
+            host="0.0.0.0",
+            port=9000,
+            reload=False,
+            factory=True,
+        )
+
     def test_sync_all_filters_symbols_by_prefixes(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [

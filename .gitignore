@@ -6,6 +6,7 @@
 .github/copilot-instructions.md
 .github/后台开发.md
 push_git.bat
+.codewhale/
 
 # Python cache
 __pycache__/

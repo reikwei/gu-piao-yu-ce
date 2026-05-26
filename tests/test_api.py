@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
-from kronos_mvp.api import _build_prediction_analysis, create_app
+from kronos_mvp.api import _build_prediction_analysis, _build_predictor, _cached_predictor, create_app
 from kronos_mvp.funds import FundFactor
 from kronos_mvp.models import Candle, ForecastPath, PredictionPoint, PredictionResult, SyncResult
 from kronos_mvp.providers import ProviderError
@@ -155,6 +155,9 @@ def _register(client: TestClient, username: str = "alice", password: str = "secr
 
 
 class ApiTests(unittest.TestCase):
+    def tearDown(self):
+        _cached_predictor.cache_clear()
+
     def test_root_page_references_runtime_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, _test_env(tmp), clear=False):
@@ -321,7 +324,7 @@ class ApiTests(unittest.TestCase):
 
                 user = _register(user_client, username="alice", password="secret123", contact="微信 abc123")
                 me = user_client.get("/api/me")
-                admin_client.post("/auth/login", json={"password": "secret-pass"})
+                admin_client.post("/api/auth/login", json={"username": "admin", "password": "secret-pass"})
                 admin_users = admin_client.get("/api/admin/users")
 
         self.assertEqual(user["contact"], "微信 abc123")
@@ -392,7 +395,7 @@ class ApiTests(unittest.TestCase):
                 user = _register(user_client, username="bob", password="oldpass123")
                 me_before_reset = user_client.get("/api/me")
 
-                admin_login = admin_client.post("/auth/login", json={"password": "secret-pass"})
+                admin_login = admin_client.post("/api/auth/login", json={"username": "admin", "password": "secret-pass"})
                 reset = admin_client.post(
                     f"/api/admin/users/{user['id']}/reset-password",
                     json={"newPassword": "newpass123"},
@@ -483,6 +486,63 @@ class ApiTests(unittest.TestCase):
         self.assertIn("score", analysis["priceVolumeConfirmation"])
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
+
+    def test_build_predictor_reuses_cached_instance(self):
+        predictor = Mock()
+
+        with patch.dict(
+            os.environ,
+            {
+                "KRONOS_MODEL": "model-a",
+                "KRONOS_TOKENIZER": "tokenizer-a",
+                "KRONOS_DEVICE": "cpu",
+            },
+            clear=False,
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor) as predictor_cls:
+            first = _build_predictor()
+            second = _build_predictor()
+
+        self.assertIs(first, second)
+        predictor_cls.assert_called_once_with(
+            model_name="model-a",
+            tokenizer_name="tokenizer-a",
+            device="cpu",
+        )
+
+    def test_predict_rate_limit_blocks_second_request_without_consuming_extra_credit(self):
+        store = FakeStore()
+        predictor = Mock()
+        predictor.predict.return_value = _sample_prediction_result()
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            _test_env(tmp, PREDICT_RATE_LIMIT_REQUESTS="1", PREDICT_RATE_LIMIT_WINDOW_SECONDS="60"),
+            clear=False,
+        ), patch("kronos_mvp.api.CandleStore", return_value=store), patch(
+            "kronos_mvp.api.KronosPredictor", return_value=predictor
+        ):
+            client = TestClient(create_app())
+            _register(client)
+            first = client.get("/api/predict/600519?horizon=1&paths=3&auto_sync=false")
+            second = client.get("/api/predict/600519?horizon=1&paths=3&auto_sync=false")
+            me = client.get("/api/me")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.headers.get("retry-after"), "60")
+        self.assertIn("预测请求过于频繁", second.json()["detail"])
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["user"]["freeCreditsRemaining"], 9)
+        predictor.predict.assert_called_once()
+
+    def test_build_prediction_analysis_handles_empty_candles(self):
+        analysis = _build_prediction_analysis([], _sample_prediction_result(), horizon=1)
+
+        self.assertEqual(analysis["signal"], "neutral")
+        self.assertEqual(analysis["pathCount"], 0)
+        self.assertIsNone(analysis["lastDate"])
+        self.assertEqual(analysis["lastClose"], 0.0)
+        self.assertEqual(analysis["priceVolumeConfirmation"]["signal"], "neutral")
 
     def test_build_prediction_analysis_includes_bullish_relative_strength(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -649,16 +709,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(unauthorized.status_code, 401)
         self.assertEqual(authorized.status_code, 200)
 
-    def test_legacy_access_password_bootstraps_admin(self):
+    def test_old_login_route_is_disabled_and_admin_uses_unified_login(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, _test_env(tmp, APP_ACCESS_PASSWORD="secret-pass"), clear=False):
                 client = TestClient(create_app())
 
-                wrong = client.post("/auth/login", json={"password": "wrong"})
-                correct = client.post("/auth/login", json={"password": "secret-pass"})
+                legacy = client.post("/auth/login", json={"password": "secret-pass"})
+                correct = client.post("/api/auth/login", json={"username": "admin", "password": "secret-pass"})
                 users = client.get("/api/admin/users")
 
-        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(legacy.status_code, 410)
+        self.assertIn("/api/auth/login", legacy.json()["detail"])
         self.assertEqual(correct.status_code, 200)
         self.assertEqual(correct.json()["user"]["username"], "admin")
         self.assertTrue(correct.json()["user"]["isAdmin"])

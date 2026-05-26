@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections import deque
 import hashlib
 import html
 import hmac
 import json
 import os
+from functools import lru_cache
+from math import ceil
+from threading import Lock
+from time import monotonic
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -45,6 +50,31 @@ load_dotenv()
 ACCESS_COOKIE_NAME = "kronos_access"
 SESSION_COOKIE_NAME = "kronos_session"
 SUPPORTED_PAY_TYPES = {"alipay"}
+DEFAULT_PREDICT_RATE_LIMIT_REQUESTS = 6
+DEFAULT_PREDICT_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+class PredictionRateLimiter:
+    def __init__(self, limit: int, window_seconds: int):
+        self.limit = max(0, int(limit))
+        self.window_seconds = max(1, int(window_seconds))
+        self._requests: dict[str, deque[float]] = {}
+        self._lock = Lock()
+
+    def check(self, key: str) -> float | None:
+        if self.limit <= 0:
+            return None
+
+        now = monotonic()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            bucket = self._requests.setdefault(key, deque())
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
+            if len(bucket) >= self.limit:
+                return max(0.0, self.window_seconds - (now - bucket[0]))
+            bucket.append(now)
+        return None
 
 
 class LoginRequest(BaseModel):
@@ -94,9 +124,27 @@ def _fund_analysis_history_days() -> int:
         return DEFAULT_FUND_HISTORY_DAYS
 
 
+def _predict_rate_limit_requests() -> int:
+    try:
+        return max(0, int(os.getenv("PREDICT_RATE_LIMIT_REQUESTS", str(DEFAULT_PREDICT_RATE_LIMIT_REQUESTS))))
+    except ValueError:
+        return DEFAULT_PREDICT_RATE_LIMIT_REQUESTS
+
+
+def _predict_rate_limit_window_seconds() -> int:
+    try:
+        return max(1, int(os.getenv("PREDICT_RATE_LIMIT_WINDOW_SECONDS", str(DEFAULT_PREDICT_RATE_LIMIT_WINDOW_SECONDS))))
+    except ValueError:
+        return DEFAULT_PREDICT_RATE_LIMIT_WINDOW_SECONDS
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=os.getenv("APP_SITE_TITLE", "土豆A股预测研究"), version="0.1.0")
     _configure_cors(app)
+    app.state.prediction_rate_limiter = PredictionRateLimiter(
+        limit=_predict_rate_limit_requests(),
+        window_seconds=_predict_rate_limit_window_seconds(),
+    )
     store = CandleStore(os.getenv("KLINE_DB_PATH", "data/candles.db"))
     fund_store = FundFactorStore(os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
     relative_store = RelativeStrengthStore(os.getenv("RELATIVE_DB_PATH", "data/relative_strength.db"))
@@ -137,16 +185,8 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/auth/login")
-    def auth_login(payload: LoginRequest, request: Request, response: Response) -> dict[str, object]:
-        username = payload.username or "admin"
-        try:
-            user = account_store.authenticate_user(username, payload.password)
-        except AccountError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-        if user is None:
-            raise HTTPException(status_code=401, detail="invalid password")
-        _set_session_cookie(response, request, account_store.create_session(int(user["id"])))
-        return {"protected": True, "authorized": True, "user": public_user(user)}
+    def auth_login() -> dict[str, object]:
+        raise HTTPException(status_code=410, detail="旧登录入口已停用，请改用 /api/auth/login。")
 
     @app.post("/api/auth/register")
     def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, object]:
@@ -159,16 +199,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/auth/login")
     def user_login(payload: LoginRequest, request: Request, response: Response) -> dict[str, object]:
-        if not payload.username:
-            raise HTTPException(status_code=400, detail="请输入用户名。")
-        try:
-            user = account_store.authenticate_user(payload.username, payload.password)
-        except AccountError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-        if user is None:
-            raise HTTPException(status_code=401, detail="用户名或密码错误。")
-        _set_session_cookie(response, request, account_store.create_session(int(user["id"])))
-        return {"user": public_user(user)}
+        return _login_user(payload, request, response, account_store)
 
     @app.post("/api/auth/logout")
     def logout(request: Request, response: Response) -> dict[str, object]:
@@ -214,6 +245,7 @@ def create_app() -> FastAPI:
         auto_sync: bool = True,
     ) -> dict[str, object]:
         user = _require_current_user(request, account_store)
+        _enforce_prediction_rate_limit(request, user)
         try:
             usage = account_store.authorize_prediction(int(user["id"]), symbol)
         except AccountError as exc:
@@ -511,6 +543,41 @@ def _require_admin(request: Request, account_store: AccountStore):
     return user
 
 
+def _enforce_prediction_rate_limit(request: Request, user: Any) -> None:
+    limiter = getattr(request.app.state, "prediction_rate_limiter", None)
+    if limiter is None:
+        return
+
+    retry_after = limiter.check(f"user:{int(user['id'])}")
+    if retry_after is None:
+        return
+
+    retry_seconds = max(1, ceil(retry_after))
+    raise HTTPException(
+        status_code=429,
+        detail=f"预测请求过于频繁，请在 {retry_seconds} 秒后重试。",
+        headers={"Retry-After": str(retry_seconds)},
+    )
+
+
+def _login_user(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    account_store: AccountStore,
+) -> dict[str, object]:
+    if not payload.username:
+        raise HTTPException(status_code=400, detail="请输入用户名。")
+    try:
+        user = account_store.authenticate_user(payload.username, payload.password)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if user is None:
+        raise HTTPException(status_code=401, detail="用户名或密码错误。")
+    _set_session_cookie(response, request, account_store.create_session(int(user["id"])))
+    return {"user": public_user(user)}
+
+
 def _set_session_cookie(response: Response, request: Request, token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -557,11 +624,21 @@ def _public_order(row) -> dict[str, object]:
     }
 
 
-def _build_predictor() -> KronosPredictor:
+@lru_cache(maxsize=8)
+def _cached_predictor(model_name: str, tokenizer_name: str, device: str, predictor_cls_id: int) -> KronosPredictor:
     return KronosPredictor(
-        model_name=os.getenv("KRONOS_MODEL", "NeoQuasar/Kronos-small"),
-        tokenizer_name=os.getenv("KRONOS_TOKENIZER", "NeoQuasar/Kronos-Tokenizer-base"),
-        device=os.getenv("KRONOS_DEVICE", "cpu"),
+        model_name=model_name,
+        tokenizer_name=tokenizer_name,
+        device=device,
+    )
+
+
+def _build_predictor() -> KronosPredictor:
+    return _cached_predictor(
+        os.getenv("KRONOS_MODEL", "NeoQuasar/Kronos-small"),
+        os.getenv("KRONOS_TOKENIZER", "NeoQuasar/Kronos-Tokenizer-base"),
+        os.getenv("KRONOS_DEVICE", "cpu"),
+        id(KronosPredictor),
     )
 
 
@@ -606,12 +683,33 @@ def _request_is_https(request: Request) -> bool:
 
 
 def _build_prediction_analysis(
-    candles: list,
+    candles: list[Any],
     result,
     horizon: int,
     symbol: str | None = None,
     relative_strength_store: RelativeStrengthStore | None = None,
 ) -> dict[str, object]:
+    if not candles:
+        return {
+            "horizon": int(horizon),
+            "lastDate": None,
+            "lastClose": 0.0,
+            "pathCount": 0,
+            "signal": "neutral",
+            "signalLabel": "震荡",
+            "confidence": 0.0,
+            "upsideProbability": 0.0,
+            "downsideProbability": 0.0,
+            "flatProbability": 1.0,
+            "volatilityAmplificationProbability": 0.0,
+            "meanProjectedClose": 0.0,
+            "meanProjectedReturn": 0.0,
+            "projectedCloseLow": 0.0,
+            "projectedCloseHigh": 0.0,
+            "priceVolumeConfirmation": _empty_price_volume_confirmation(),
+            "relativeStrength": build_relative_strength_analysis(symbol or result.symbol, [], relative_strength_store),
+        }
+
     last_candle = candles[-1]
     last_close = float(last_candle.close)
     price_volume_confirmation = _build_price_volume_confirmation(candles)
@@ -782,6 +880,17 @@ def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
             "lastVolume": last_volume,
             "lastAmount": last_amount,
         },
+    }
+
+
+def _empty_price_volume_confirmation() -> dict[str, object]:
+    return {
+        "score": 50,
+        "signal": "neutral",
+        "signalLabel": "价量中性",
+        "detail": "价量确认：样本不足。当前缺少可用K线数据，暂不放大方向判断。",
+        "components": [],
+        "metrics": {},
     }
 
 
@@ -1162,6 +1271,3 @@ def _configure_cors(app: FastAPI) -> None:
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["*"],
     )
-
-
-app = create_app()

@@ -95,7 +95,7 @@ python -m kronos_mvp.cli sync 600835 --full-refresh
 
 全市场同步现在还会默认写入进度文件，长任务如果中断，再次执行同样的 `sync --all` 会自动从未完成队列继续；单只股票临时失败会按 `--max-retries` 做重试。需要从头重建队列时，可以显式加上 `--reset-progress`。
 
-GitHub Actions 的 `Update A-share K-line Data` 工作流现在也支持手动 `workflow_dispatch` 时把 `full_refresh` 设为 `true`，用于全量回填 K 线字段。注意这只能修复 `candles.db` 里的历史字段缺口；相对强弱行业映射和行业 K 线仍由独立的 `update-relative-strength-data.yml` 维护，不会随着 K 线工作流自动补齐。
+GitHub Actions 的 `Update A-share K-line Data` 工作流现在也支持手动 `workflow_dispatch` 时把 `full_refresh` 设为 `true`，用于全量回填 K 线字段。注意这只能修复 `candles.db` 里的历史字段缺口；相对强弱行业映射和行业 K 线仍由独立的 `update-relative-strength-data.yml` 维护，不会随着 K 线工作流自动补齐。`full_refresh` 现在会在写库前校验 provider 返回历史是否覆盖现有缓存的最早日期；如果返回的是更晚起始的部分历史，同步会直接报错并保留原缓存，避免把不完整结果误当成成功的全量刷新。
 
 如果要手动只跑某个交易所分片，可以使用：
 
@@ -114,6 +114,8 @@ powershell -ExecutionPolicy Bypass -File scripts/run_local_api.ps1
 6. 打开 http://127.0.0.1:8000；如果配置了 `APP_ACCESS_PASSWORD`，先输入访问密码，再输入股票代码并点击“开始预测”。
 
 当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页只负责输入股票代码；点击“开始预测”后才进入详情页。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。网页预测默认直接读取本地 SQLite 缓存，避免把页面请求绑在实时抓数上；生产数据刷新依赖每日 GitHub Actions，同步失败时不会拖垮前端预测请求。
+
+API 侧现在会在进程内复用同一组 Kronos 模型实例，避免每次预测都重新加载模型；同时 `/api/predict/{symbol}` 默认启用账户级频率限制，环境变量 `PREDICT_RATE_LIMIT_REQUESTS` 与 `PREDICT_RATE_LIMIT_WINDOW_SECONDS` 可调整每个账户在窗口期内的预测次数上限。账号登录入口统一为 `/api/auth/login`；旧的 `/auth/login` 已停用，管理员也应使用同一入口登录，只是默认用户名仍是 `admin`。
 
 如果你希望本地先同步最近半个月交易日的资金面数据，并在后续继续按缺口增量补齐，可以执行：
 
