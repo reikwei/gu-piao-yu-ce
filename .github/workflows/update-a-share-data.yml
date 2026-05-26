@@ -71,7 +71,7 @@ jobs:
           key: a-share-merged-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
@@ -80,7 +80,7 @@ jobs:
           target: ${{ env.VPS_DATA_DIR }}
       - name: Upload SQLite cache to VPS via SSH key
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
@@ -469,7 +469,7 @@ jobs:
           key: a-share-merged-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload merged SQLite cache to VPS via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
@@ -478,7 +478,7 @@ jobs:
           target: ${{ env.VPS_DATA_DIR }}
       - name: Upload merged SQLite cache to VPS via SSH key
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && steps.shard_report.outputs.all_shards_ok == 'true' && contains(env.VPS_SSH_KEY, 'BEGIN ')
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}

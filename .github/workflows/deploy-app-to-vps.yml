@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload deploy archive via password
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DEPLOY_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN ')))
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload deploy archive via SSH key
         if: env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DEPLOY_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ')
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
