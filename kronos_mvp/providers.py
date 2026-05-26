@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -36,6 +37,9 @@ class RelativeStrengthProvider(Protocol):
         raise NotImplementedError
 
     def fetch_industry_mappings(self) -> list[RelativeIndustryMapping]:
+        raise NotImplementedError
+
+    def fetch_industry_mappings_for_symbols(self, symbols: list[str]) -> list[RelativeIndustryMapping]:
         raise NotImplementedError
 
     def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
@@ -196,6 +200,43 @@ class AkShareRelativeStrengthProvider:
         if mappings:
             return mappings
         raise ProviderError("; ".join(errors) if errors else "akshare returned no industry mappings")
+
+    def fetch_industry_mappings_for_symbols(self, symbols: list[str]) -> list[RelativeIndustryMapping]:
+        try:
+            import akshare as ak
+        except ImportError as exc:
+            raise ProviderError("akshare is not installed") from exc
+
+        requested: list[str] = []
+        seen_symbols: set[str] = set()
+        for symbol in symbols:
+            code = normalize_symbol(symbol)
+            if not _is_a_share_symbol(code) or code in seen_symbols:
+                continue
+            seen_symbols.add(code)
+            requested.append(code)
+
+        mappings: list[RelativeIndustryMapping] = []
+        errors: list[str] = []
+        for symbol in requested:
+            try:
+                frame = _call_with_retries(
+                    lambda symbol=symbol: ak.stock_individual_info_em(symbol=symbol),
+                    attempts=3,
+                )
+            except Exception as exc:
+                errors.append(f"{symbol}: {exc}")
+                continue
+
+            industry_name = _extract_em_industry_name(frame)
+            if not industry_name:
+                errors.append(f"{symbol}: missing industry")
+                continue
+            mappings.append(RelativeIndustryMapping(symbol=symbol, industry_name=industry_name))
+
+        if mappings:
+            return mappings
+        raise ProviderError("; ".join(errors) if errors else "akshare returned no requested industry mappings")
 
     def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
         try:
@@ -463,6 +504,15 @@ def _optional_float(value: object) -> float | None:
     return float(text)
 
 
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    return text
+
+
 def _normalize_turnover_rate(value: object, source: str) -> float | None:
     numeric = _optional_float(value)
     if numeric is None:
@@ -699,13 +749,43 @@ def _akshare_symbol_loaders(ak: object, market: str):
     return loaders
 
 
+def _extract_em_industry_name(frame) -> str | None:
+    if frame is None or frame.empty:
+        return None
+
+    direct_column = _find_frame_column(frame.columns, ("行业", "所属行业"))
+    if direct_column is not None:
+        for value in frame[direct_column].tolist():
+            text = _optional_text(value)
+            if text is not None:
+                return text
+
+    item_column = _find_frame_column(frame.columns, ("item", "项目", "字段", "名称"))
+    value_column = _find_frame_column(frame.columns, ("value", "值", "内容", "数据"))
+    if item_column is None or value_column is None:
+        if len(frame.columns) < 2:
+            return None
+        item_column = str(frame.columns[0])
+        value_column = str(frame.columns[1])
+
+    for _, row in frame.iterrows():
+        label = _optional_text(row[item_column])
+        if label not in {"行业", "所属行业"}:
+            continue
+        return _optional_text(row[value_column])
+    return None
+
+
 def _call_with_retries(loader, attempts: int = 3):
     last_exc: Exception | None = None
-    for _ in range(max(1, attempts)):
+    total_attempts = max(1, attempts)
+    for attempt in range(total_attempts):
         try:
             return loader()
         except Exception as exc:  # pragma: no cover - exercised via provider tests with injected failures
             last_exc = exc
+            if attempt + 1 < total_attempts:
+                time.sleep(0.2 * (attempt + 1))
     if last_exc is not None:
         raise last_exc
     raise ProviderError("loader did not execute")

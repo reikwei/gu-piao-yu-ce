@@ -256,6 +256,10 @@ class RelativeStrengthSyncService:
             mapping_rows, mapping_warning = self._refresh_mappings_or_reuse_cache([normalized])
             if mapping_warning:
                 warnings.append(mapping_warning)
+            fallback_rows, fallback_warning = self._backfill_requested_symbol_mappings([normalized])
+            mapping_rows += fallback_rows
+            if fallback_warning:
+                warnings.append(fallback_warning)
         else:
             mapping_rows = 0
 
@@ -298,6 +302,10 @@ class RelativeStrengthSyncService:
             mapping_rows, mapping_warning = self._refresh_mappings_or_reuse_cache(normalized_symbols or None)
             if mapping_warning:
                 warnings.append(mapping_warning)
+            fallback_rows, fallback_warning = self._backfill_requested_symbol_mappings(normalized_symbols)
+            mapping_rows += fallback_rows
+            if fallback_warning:
+                warnings.append(fallback_warning)
         else:
             mapping_rows = 0
 
@@ -356,7 +364,51 @@ class RelativeStrengthSyncService:
         except ProviderError as exc:
             if self.store.list_symbol_industries(symbols or None):
                 return 0, f"行业映射刷新失败，已回退到缓存：{exc}"
+            if symbols:
+                return 0, f"行业映射刷新失败，稍后尝试单票补录：{exc}"
             return 0, f"行业映射刷新失败，本次仅同步指数基准：{exc}"
+
+    def _backfill_requested_symbol_mappings(self, symbols: list[str] | None) -> tuple[int, str | None]:
+        if not symbols:
+            return 0, None
+
+        normalized_symbols: list[str] = []
+        seen_symbols: set[str] = set()
+        for symbol in symbols:
+            code = normalize_symbol(symbol)
+            if code in seen_symbols:
+                continue
+            seen_symbols.add(code)
+            normalized_symbols.append(code)
+
+        missing_symbols = [symbol for symbol in normalized_symbols if self.store.get_symbol_industry(symbol) is None]
+        if not missing_symbols:
+            return 0, None
+
+        try:
+            fallback_mappings = self.provider.fetch_industry_mappings_for_symbols(missing_symbols)
+        except ProviderError as exc:
+            return 0, f"指定股票行业映射补录失败：{exc}"
+
+        timestamp = datetime.now(SHANGHAI_TZ).isoformat(timespec="seconds")
+        rows = self.store.upsert_symbol_industries(
+            [
+                SymbolIndustry(
+                    symbol=item.symbol,
+                    industry_key=industry_key_from_name(item.industry_name),
+                    industry_name=item.industry_name,
+                    source=self.provider.name,
+                    updated_at=timestamp,
+                )
+                for item in fallback_mappings
+            ]
+        )
+        unresolved = [symbol for symbol in missing_symbols if self.store.get_symbol_industry(symbol) is None]
+        if unresolved:
+            if rows > 0:
+                return rows, f"已改用单票信息补录 {rows} 只股票行业映射，仍缺失：{', '.join(unresolved)}"
+            return 0, f"指定股票行业映射仍缺失：{', '.join(unresolved)}"
+        return rows, f"已改用单票信息补录 {rows} 只股票行业映射。"
 
     def _sync_benchmark(self, benchmark: RelativeBenchmark, history_days: int) -> int:
         start_date = _sync_start_date(self.store.get_latest_date(benchmark.key), history_days)

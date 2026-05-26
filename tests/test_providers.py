@@ -327,6 +327,23 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual([item.symbol for item in mappings], ["600835", "000001", "300001"])
         self.assertTrue(all(item.industry_name == "家电行业" for item in mappings))
 
+    def test_relative_strength_provider_reads_requested_symbol_industry_from_stock_info(self):
+        fake_ak = SimpleNamespace(
+            stock_individual_info_em=lambda symbol: pd.DataFrame(
+                {
+                    "item": ["股票代码", "行业", "股票简称"],
+                    "value": [symbol, "家电行业", "上海机电"],
+                }
+            )
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            mappings = AkShareRelativeStrengthProvider().fetch_industry_mappings_for_symbols(["600835"])
+
+        self.assertEqual(len(mappings), 1)
+        self.assertEqual(mappings[0].symbol, "600835")
+        self.assertEqual(mappings[0].industry_name, "家电行业")
+
     def test_relative_strength_provider_reads_index_daily_from_akshare(self):
         fake_ak = SimpleNamespace(
             stock_zh_index_daily_em=lambda symbol, start_date, end_date: pd.DataFrame(

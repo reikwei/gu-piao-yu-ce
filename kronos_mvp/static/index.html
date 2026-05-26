@@ -2389,6 +2389,26 @@
       return `${layers.slice(0, -1).join('、')}和${layers[layers.length - 1]}`;
     }
 
+    function collectDirectionalLayers(kronosSignal, fundSignal, priceSignal, relativeSignal) {
+      const bullish = [];
+      const bearish = [];
+      const pairs = [
+        ['Kronos', kronosSignal],
+        ['资金面', fundSignal],
+        ['价量确认', priceSignal],
+        ['相对强弱', relativeSignal],
+      ];
+      pairs.forEach(([label, signal]) => {
+        const bias = signalBias(signal);
+        if (bias > 0) {
+          bullish.push(label);
+        } else if (bias < 0) {
+          bearish.push(label);
+        }
+      });
+      return { bullish, bearish };
+    }
+
     function buildCombinedNarrative(kronosAnalysis, fundAnalysis, fundError) {
       if (!kronosAnalysis) {
         return {
@@ -2423,6 +2443,8 @@
       const patternHint = fundPattern ? `资金面当前更像${fundPattern}。` : '';
       const kronosSupport = sideSupport(kronosSignal, priceSignal, relativeSignal);
       const fundSupport = sideSupport(fundSignal, priceSignal, relativeSignal);
+      const directionalLayers = collectDirectionalLayers(kronosSignal, fundSignal, priceSignal, relativeSignal);
+      const hasLayerConflict = directionalLayers.bullish.length > 0 && directionalLayers.bearish.length > 0;
 
       if (directConflict) {
         if (kronosSupport.length > fundSupport.length) {
@@ -2446,6 +2468,15 @@
           label: `${verdict.label} ${verdict.score}/100`,
           summary: `Kronos ${kronosAnalysis.signalLabel || '震荡'} 与资金面${fundAnalysis.signalLabel || '中性'}发生冲突，价量确认和相对强弱没有形成单边站队，冲突裁决分 ${verdict.score}/100。`,
           detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} ${patternHint} 当前更适合保持谨慎，等待下一交易日继续确认。`.trim(),
+        };
+      }
+
+      if (hasLayerConflict) {
+        return {
+          tone: verdict.tone,
+          label: `${verdict.label} ${verdict.score}/100`,
+          summary: `${formatLayerNames(directionalLayers.bearish)}偏空、${formatLayerNames(directionalLayers.bullish)}偏多，当前仍有分歧，冲突裁决分 ${verdict.score}/100，综合结论暂维持 ${verdict.label}。`,
+          detail: `${buildKronosSummary(kronosAnalysis)} ${buildFundSummary(fundAnalysis, fundError)} ${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 当前仍属分歧格局，需继续观察下一交易日是否形成单边共振。`.trim(),
         };
       }
 

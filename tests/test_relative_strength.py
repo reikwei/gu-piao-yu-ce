@@ -28,13 +28,16 @@ class MemoryRelativeStrengthProvider:
     def __init__(
         self,
         mapping_error: Exception | None = None,
+        symbol_mapping_error: Exception | None = None,
         index_error: Exception | None = None,
         industry_error: Exception | None = None,
     ):
         self.mapping_calls = 0
+        self.symbol_mapping_calls: list[tuple[str, ...]] = []
         self.index_calls: list[tuple[str, date | None]] = []
         self.industry_calls: list[tuple[str, date | None]] = []
         self.mapping_error = mapping_error
+        self.symbol_mapping_error = symbol_mapping_error
         self.index_error = index_error
         self.industry_error = industry_error
 
@@ -52,6 +55,12 @@ class MemoryRelativeStrengthProvider:
         if self.mapping_error is not None:
             raise self.mapping_error
         return [_Mapping(symbol="600835", industry_name="家电行业")]
+
+    def fetch_industry_mappings_for_symbols(self, symbols: list[str]):
+        self.symbol_mapping_calls.append(tuple(symbols))
+        if self.symbol_mapping_error is not None:
+            raise self.symbol_mapping_error
+        return [_Mapping(symbol=symbol, industry_name="家电行业") for symbol in symbols]
 
     def fetch_industry_daily(self, industry_name: str, start_date: date | None = None) -> list[Candle]:
         self.industry_calls.append((industry_name, start_date))
@@ -203,6 +212,36 @@ class RelativeStrengthSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.rows, 8)
             self.assertTrue(result.warnings)
             self.assertIn("本次仅同步指数基准", result.warnings[0])
+
+    def test_sync_symbol_backfills_requested_mapping_when_full_refresh_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider(mapping_error=ProviderError("upstream closed connection"))
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+
+            result = service.sync_symbol("600835", history_days=20)
+
+            self.assertEqual(result.mapping_rows, 1)
+            self.assertEqual(result.rows, 4)
+            self.assertEqual(provider.mapping_calls, 1)
+            self.assertEqual(provider.symbol_mapping_calls, [("600835",)])
+            self.assertEqual(store.get_symbol_industry("600835").industry_name, "家电行业")
+            self.assertTrue(any("单票信息补录" in warning for warning in result.warnings))
+
+    def test_sync_market_with_symbols_backfills_requested_mapping_when_full_refresh_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider(mapping_error=ProviderError("upstream closed connection"))
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+
+            result = service.sync_market(history_days=20, symbols=["600835"])
+
+            self.assertEqual(result.mapping_rows, 1)
+            self.assertEqual(result.rows, 4)
+            self.assertEqual(result.benchmark_labels, ("上证指数",))
+            self.assertEqual(result.industry_names, ("家电行业",))
+            self.assertEqual(provider.symbol_mapping_calls, [("600835",)])
+            self.assertTrue(any("单票信息补录" in warning for warning in result.warnings))
 
     def test_sync_market_skips_failed_benchmarks_with_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
