@@ -59,9 +59,9 @@ jobs:
           fi
 
           if [ -n "${SYMBOLS}" ]; then
-            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative ${SYMBOLS} --history-days "${HISTORY_DAYS}"
+            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative ${SYMBOLS} --history-days "${HISTORY_DAYS}" --refresh-mappings
           else
-            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative --history-days "${HISTORY_DAYS}"
+            python -m kronos_mvp.cli --relative-db "${RELATIVE_DB_PATH}" sync-relative --history-days "${HISTORY_DAYS}" --refresh-mappings
           fi
 
       - name: Verify industry repair result

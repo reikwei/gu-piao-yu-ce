@@ -69,6 +69,11 @@ def main() -> None:
         default=int(os.getenv("RELATIVE_SYNC_HISTORY_DAYS", str(DEFAULT_RELATIVE_HISTORY_DAYS))),
         help="number of recent calendar days used to seed benchmark and industry caches when empty",
     )
+    sync_relative_parser.add_argument(
+        "--refresh-mappings",
+        action="store_true",
+        help="force a fresh industry mapping pull instead of reusing a recent mapping cache",
+    )
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
@@ -246,10 +251,17 @@ def _run_sync_relative(args: argparse.Namespace) -> None:
     service = RelativeStrengthSyncService(store=store)
     symbols = _normalize_symbols(args.symbols)
     if symbols:
-        result = service.sync_market(history_days=args.history_days, symbols=symbols)
+        result = service.sync_market(
+            history_days=args.history_days,
+            symbols=symbols,
+            force_refresh_mappings=bool(args.refresh_mappings),
+        )
         mode = "symbols"
     else:
-        result = service.sync_market(history_days=args.history_days)
+        result = service.sync_market(
+            history_days=args.history_days,
+            force_refresh_mappings=bool(args.refresh_mappings),
+        )
         mode = "market"
 
     print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
@@ -261,6 +273,7 @@ def _run_sync_relative(args: argparse.Namespace) -> None:
                     "scope": mode,
                     "symbols": list(result.target_symbols),
                     "historyDays": args.history_days,
+                    "forceRefreshMappings": bool(args.refresh_mappings),
                     "mappingRows": result.mapping_rows,
                     "benchmarkCount": len(result.benchmark_labels),
                     "industryCount": len(result.industry_names),

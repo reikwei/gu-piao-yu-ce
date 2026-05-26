@@ -172,6 +172,30 @@ class RelativeStrengthSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.benchmark_labels, ("沪深300", "上证指数", "深证成指", "创业板指"))
             self.assertEqual(result.industry_names, ("家电行业",))
 
+    def test_sync_market_force_refresh_mappings_overwrites_fresh_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RelativeStrengthStore(Path(tmp) / "relative.db")
+            provider = MemoryRelativeStrengthProvider()
+            service = RelativeStrengthSyncService(store=store, provider=provider)
+            store.upsert_symbol_industries(
+                [
+                    SymbolIndustry(
+                        symbol="600835",
+                        industry_key=industry_key_from_name("旧行业"),
+                        industry_name="旧行业",
+                        source="akshare",
+                        updated_at=datetime.now(SHANGHAI_TZ).isoformat(timespec="seconds"),
+                    )
+                ]
+            )
+
+            result = service.sync_market(history_days=20, force_refresh_mappings=True)
+
+            self.assertEqual(result.mapping_rows, 1)
+            self.assertEqual(provider.mapping_calls, 1)
+            self.assertEqual(store.get_symbol_industry("600835").industry_name, "家电行业")
+            self.assertEqual(result.industry_names, ("家电行业",))
+
     def test_sync_market_reuses_cached_mappings_when_refresh_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = RelativeStrengthStore(Path(tmp) / "relative.db")
