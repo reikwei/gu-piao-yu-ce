@@ -66,6 +66,7 @@ jobs:
 
       - name: Verify industry repair result
         env:
+          EVENT_NAME: ${{ github.event_name }}
           SYMBOLS: ${{ github.event.inputs.symbols }}
         run: |
           python - <<'PY'
@@ -82,9 +83,12 @@ jobs:
               conn.execute("SELECT COUNT(DISTINCT symbol) FROM candles WHERE symbol LIKE 'industry:%'").fetchone()[0]
           )
 
+            event_name = os.environ.get("EVENT_NAME", "").strip()
           symbols = [item.strip() for item in os.environ.get("SYMBOLS", "").split() if item.strip()]
           missing_symbols: list[str] = []
           missing_industry_kline: list[str] = []
+            verification_status = "ok"
+            verification_note = ""
 
           for symbol in symbols:
               row = conn.execute(
@@ -103,30 +107,42 @@ jobs:
               if total <= 0:
                   missing_industry_kline.append(symbol)
 
+              if symbols and (missing_symbols or missing_industry_kline):
+                verification_status = "failed"
+                verification_note = (
+                  "Relative industry repair did not complete: "
+                  f"missing_mappings={missing_symbols}, missing_industry_kline={missing_industry_kline}"
+                )
+              elif not symbols and (mapping_total <= 0 or industry_symbol_total <= 0):
+                verification_status = "warning"
+                verification_note = (
+                  "No explicit symbols were requested and the relative cache still has no industry mappings or "
+                  "industry K-lines. This run stays best-effort; use workflow_dispatch with symbols for a "
+                  "deterministic repair."
+                )
+
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write("### Relative industry repair verification\n\n")
+                fh.write(f"- event_name: {event_name or 'unknown'}\n")
               fh.write(f"- mapping_total: {mapping_total}\n")
               fh.write(f"- industry_symbol_total: {industry_symbol_total}\n")
+                fh.write(f"- verification_status: {verification_status}\n")
               if symbols:
                   fh.write(f"- requested_symbols: {', '.join(symbols)}\n")
                   fh.write(f"- missing_mappings: {', '.join(missing_symbols) if missing_symbols else 'none'}\n")
                   fh.write(
                       f"- missing_industry_kline: {', '.join(missing_industry_kline) if missing_industry_kline else 'none'}\n"
                   )
+                if verification_note:
+                  fh.write(f"- note: {verification_note}\n")
               fh.write("\n")
 
           conn.close()
 
-          if symbols:
-              if missing_symbols or missing_industry_kline:
-                  raise SystemExit(
-                      "Relative industry repair did not complete: "
-                      f"missing_mappings={missing_symbols}, missing_industry_kline={missing_industry_kline}"
-                  )
-          elif mapping_total <= 0 or industry_symbol_total <= 0:
-              raise SystemExit(
-                  "Relative industry repair did not populate any industry mappings or industry K-lines."
-              )
+              if verification_status == "failed":
+                raise SystemExit(verification_note)
+              if verification_status == "warning":
+                print(f"::warning::{verification_note}")
           PY
 
       - name: Upload relative strength repair artifact

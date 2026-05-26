@@ -145,7 +145,7 @@ python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative 6
 - 用于市场基准比较的指数日线缓存。
 - 用于行业相对强弱比较的行业板块日线缓存。
 
-日常的 `Update Relative Strength Data` 会在工作日 18:20 跑增量同步，并在非交易日自动跳过。若要单独修复行业映射与行业 K 线，可以使用独立的 `Repair Relative Industry Data` workflow：它会在北京时间每周日 21:09 运行一次，且保留手动 `workflow_dispatch` 入口，不受交易日守卫影响。
+日常的 `Update Relative Strength Data` 会在工作日 18:20 跑增量同步，并在非交易日自动跳过。若要单独修复行业映射与行业 K 线，可以使用独立的 `Repair Relative Industry Data` workflow：它会在北京时间每周日 21:09 运行一次，且保留手动 `workflow_dispatch` 入口，不受交易日守卫影响。未指定 `symbols` 的定时/手动空参运行按 best-effort 处理；如果当前库里仍没有任何行业映射或行业 K 线，workflow 会在 summary 里记 warning，而不是直接红灯。若要对指定股票做严格修复校验，请手动传入 `symbols`。
 
 全市场模式下，行业映射会优先复用现有缓存；只有映射缺失或超过 5 天未刷新时才会重新全量抓取。指数与行业 K 线仍按现有数据库中的最新日期做增量补齐。
 
