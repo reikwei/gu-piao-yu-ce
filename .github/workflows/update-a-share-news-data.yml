@@ -292,6 +292,7 @@ jobs:
           import glob
           import sqlite3
           from pathlib import Path
+          from urllib.parse import quote
 
           merged_path = Path("data/news_sentiment.db")
           merged_path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,28 +323,33 @@ jobs:
                   "CREATE INDEX IF NOT EXISTS idx_stock_news_symbol_published ON stock_news(symbol, published_at DESC)"
               )
 
-              for index, shard in enumerate(shard_paths):
-                  alias = f"shard_{index}"
-                  conn.execute(f"ATTACH DATABASE ? AS {alias}", (str(shard),))
+              insert_sql = """
+                  INSERT OR REPLACE INTO stock_news(
+                      symbol,
+                      url,
+                      title,
+                      summary,
+                      source,
+                      published_at,
+                      sentiment_score,
+                      sentiment_label,
+                      updated_at
+                  )
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              """
+
+              merged_shards = 0
+              for shard in shard_paths:
+                  shard_uri = f"file:{quote(str(shard.resolve()), safe='/:')}?mode=ro&immutable=1"
+                  shard_conn = sqlite3.connect(shard_uri, uri=True)
                   try:
-                      row = conn.execute(
-                          f"SELECT name FROM {alias}.sqlite_master WHERE type='table' AND name='stock_news'"
+                      row = shard_conn.execute(
+                          "SELECT name FROM sqlite_master WHERE type='table' AND name='stock_news'"
                       ).fetchone()
                       if row is None:
                           continue
-                      conn.execute(
-                          f"""
-                          INSERT OR REPLACE INTO stock_news(
-                              symbol,
-                              url,
-                              title,
-                              summary,
-                              source,
-                              published_at,
-                              sentiment_score,
-                              sentiment_label,
-                              updated_at
-                          )
+                      rows = shard_conn.execute(
+                          """
                           SELECT
                               symbol,
                               url,
@@ -354,14 +360,18 @@ jobs:
                               sentiment_score,
                               sentiment_label,
                               updated_at
-                          FROM {alias}.stock_news
+                          FROM stock_news
                           """
-                      )
+                      ).fetchall()
+                      if rows:
+                          conn.executemany(insert_sql, rows)
+                      conn.commit()
+                      merged_shards += 1
                   finally:
-                      conn.execute(f"DETACH DATABASE {alias}")
+                      shard_conn.close()
 
               total = conn.execute("SELECT COUNT(*) FROM stock_news").fetchone()[0]
-              print(f"Merged shard databases: {len(shard_paths)}, total rows: {total}")
+              print(f"Merged shard databases: {merged_shards}/{len(shard_paths)}, total rows: {total}")
           finally:
               conn.commit()
               conn.close()
