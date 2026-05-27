@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -77,13 +77,41 @@ def main() -> None:
         help="force a fresh industry mapping pull instead of reusing a recent mapping cache",
     )
 
-    sync_news_parser = subparsers.add_parser("sync-news", help="sync per-symbol stock news sentiment cache")
-    sync_news_parser.add_argument("symbols", nargs="+")
+    sync_news_parser = subparsers.add_parser("sync-news", help="sync stock news sentiment cache")
+    sync_news_parser.add_argument("symbols", nargs="*")
+    sync_news_parser.add_argument("--all", action="store_true", dest="sync_all", help="sync all A-share symbols")
+    sync_news_parser.add_argument(
+        "--market",
+        choices=["all", "sh", "sz", "bj"],
+        default="all",
+        help="limit all-market sync to one exchange shard",
+    )
+    sync_news_parser.add_argument(
+        "--prefixes",
+        help="comma-separated symbol prefixes used to split all-market sync into smaller shards",
+    )
     sync_news_parser.add_argument(
         "--limit",
         type=int,
         default=int(os.getenv("NEWS_SYNC_LIMIT", "30")),
         help="maximum raw news rows fetched per symbol",
+    )
+    sync_news_parser.add_argument(
+        "--refresh-hours",
+        type=int,
+        default=int(os.getenv("NEWS_SYNC_REFRESH_HOURS", "12")),
+        help="skip symbols synced within this many hours unless --force is used",
+    )
+    sync_news_parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=int(os.getenv("NEWS_SYNC_MAX_RETRIES", "1")),
+        help="retry count per symbol when provider errors occur",
+    )
+    sync_news_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="force refresh even if symbol was synced recently",
     )
 
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
@@ -300,23 +328,94 @@ def _run_sync_relative(args: argparse.Namespace) -> None:
 
 
 def _run_sync_news(args: argparse.Namespace) -> None:
-    symbols = _normalize_symbols(args.symbols)
+    if args.max_retries < 0:
+        raise SystemExit("sync-news --max-retries must be >= 0")
+    if args.refresh_hours < 0:
+        raise SystemExit("sync-news --refresh-hours must be >= 0")
+
+    prefixes = _parse_prefixes(args.prefixes)
+    if args.sync_all and args.symbols:
+        raise SystemExit("sync-news --all cannot be combined with explicit symbols")
+    if not args.sync_all and args.market != "all":
+        raise SystemExit("sync-news --market requires --all")
+    if not args.sync_all and prefixes:
+        raise SystemExit("sync-news --prefixes requires --all")
+
+    if args.sync_all:
+        symbols = list_a_share_symbols(market=args.market)
+        symbols = _filter_symbols_by_prefixes(symbols, prefixes)
+    else:
+        symbols = _normalize_symbols(args.symbols)
+
+    if not symbols:
+        raise SystemExit("sync-news requires one or more symbols or --all")
+
     store = StockNewsStore(args.news_db)
     service = StockNewsSyncService(store=store, providers=build_default_news_providers())
 
+    attempted = 0
+    skipped_fresh = 0
     total_rows = 0
     succeeded = 0
     failed = 0
+    updated = 0
+    recent_window = max(0, int(args.refresh_hours))
+    retry_limit = max(0, int(args.max_retries))
+    per_symbol_limit = max(1, int(args.limit))
+
     for symbol in symbols:
-        try:
-            result = service.sync_symbol(symbol, limit=max(1, int(args.limit)))
-        except Exception as exc:
+        if not args.force and recent_window > 0:
+            last_updated_at = store.get_symbol_last_updated_at(symbol)
+            if not _is_news_symbol_stale(last_updated_at, recent_window):
+                skipped_fresh += 1
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "symbol": symbol,
+                            "skipped": True,
+                            "reason": "fresh",
+                            "latestUpdatedAt": last_updated_at,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                continue
+
+        attempted += 1
+        result = None
+        error_text = ""
+        for attempt in range(1, retry_limit + 2):
+            try:
+                result = service.sync_symbol(symbol, limit=per_symbol_limit)
+                error_text = ""
+                break
+            except Exception as exc:
+                error_text = str(exc)
+                if attempt <= retry_limit:
+                    print(
+                        json.dumps(
+                            {
+                                "ok": False,
+                                "symbol": symbol,
+                                "retrying": True,
+                                "attempt": attempt,
+                                "maxRetries": retry_limit,
+                                "error": error_text,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    continue
+
+        if result is None:
             failed += 1
-            print(json.dumps({"ok": False, "symbol": symbol, "error": str(exc)}, ensure_ascii=False))
+            print(json.dumps({"ok": False, "symbol": symbol, "error": error_text, "retrying": False}, ensure_ascii=False))
             continue
 
         succeeded += 1
         total_rows += int(result.rows)
+        updated += int(result.rows > 0)
         print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
 
     print(
@@ -324,16 +423,39 @@ def _run_sync_news(args: argparse.Namespace) -> None:
             {
                 "summary": {
                     "mode": "news",
+                    "scope": "all" if args.sync_all else "symbols",
+                    "market": args.market if args.sync_all else "custom",
+                    "prefixes": list(prefixes),
                     "symbols": len(symbols),
+                    "attempted": attempted,
+                    "skippedFresh": skipped_fresh,
                     "succeeded": succeeded,
                     "failed": failed,
+                    "updated": updated,
                     "rows": total_rows,
-                    "limit": max(1, int(args.limit)),
+                    "limit": per_symbol_limit,
+                    "refreshHours": recent_window,
+                    "maxRetries": retry_limit,
+                    "force": bool(args.force),
                 }
             },
             ensure_ascii=False,
         )
     )
+
+
+def _is_news_symbol_stale(last_updated_at: str | None, refresh_hours: int) -> bool:
+    if not last_updated_at or not isinstance(last_updated_at, str):
+        return True
+    normalized = last_updated_at[:-1] + "+00:00" if last_updated_at.endswith("Z") else last_updated_at
+    try:
+        last_moment = datetime.fromisoformat(normalized)
+    except ValueError:
+        return True
+    if last_moment.tzinfo is None:
+        last_moment = last_moment.replace(tzinfo=timezone.utc)
+    threshold = datetime.now(timezone.utc) - timedelta(hours=max(0, refresh_hours))
+    return last_moment.astimezone(timezone.utc) < threshold
 
 
 def _run_all_market_sync(

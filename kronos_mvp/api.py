@@ -1340,6 +1340,13 @@ def _auto_sync_news(store: StockNewsStore, symbol: str, force: bool = False) -> 
     service = StockNewsSyncService(store=store, providers=build_default_news_providers())
     try:
         result = service.sync_symbol(symbol)
+        if result.rows <= 0:
+            return {
+                "attempted": True,
+                "updated": False,
+                **result.to_dict(),
+                "warning": "新闻数据源未返回可用新闻，可能是上游接口空结果或该股票暂缺新闻。",
+            }
         return {
             "attempted": True,
             "updated": bool(result.rows > 0),

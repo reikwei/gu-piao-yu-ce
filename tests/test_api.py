@@ -509,6 +509,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
 
+    def test_predict_surfaces_news_warning_when_provider_returns_empty(self):
+        store = FakeStore()
+        predictor = Mock()
+        predictor.predict.return_value = _sample_prediction_result()
+        news_store = FakeNewsStore(last_updated_at=None)
+        empty_news_result = Mock()
+        empty_news_result.rows = 0
+        empty_news_result.to_dict.return_value = {"symbol": "600835", "provider": "none", "rows": 0}
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor), patch(
+            "kronos_mvp.api.StockNewsStore", return_value=news_store
+        ), patch("kronos_mvp.api.StockNewsSyncService") as news_service_cls, patch(
+            "kronos_mvp.api.build_default_news_providers", return_value=[]
+        ):
+            news_service = Mock()
+            news_service.sync_symbol.return_value = empty_news_result
+            news_service_cls.return_value = news_service
+
+            client = TestClient(create_app())
+            _register(client)
+            response = client.get("/api/predict/600835?horizon=1&paths=3&auto_sync=false")
+
+        self.assertEqual(response.status_code, 200)
+        news_sync = response.json()["sync"]["news"]
+        self.assertTrue(news_sync["attempted"])
+        self.assertFalse(news_sync["updated"])
+        self.assertIn("warning", news_sync)
+
     def test_build_predictor_reuses_cached_instance(self):
         predictor = Mock()
 

@@ -91,7 +91,11 @@ jobs:
             LIMIT="30"
           fi
 
-          python -m kronos_mvp.cli --news-db "${NEWS_DB_PATH}" sync-news ${SYMBOLS} --limit "${LIMIT}"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python -m kronos_mvp.cli --news-db "${NEWS_DB_PATH}" sync-news --all --limit "${LIMIT}" --refresh-hours "12" --max-retries "1"
+          else
+            python -m kronos_mvp.cli --news-db "${NEWS_DB_PATH}" sync-news ${SYMBOLS} --limit "${LIMIT}" --refresh-hours "12" --max-retries "1"
+          fi
 
       - name: Upload news cache artifact
         if: ${{ always() && (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') }}

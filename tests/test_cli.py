@@ -144,6 +144,51 @@ class CliTests(unittest.TestCase):
         self.assertIn('"mode": "news"', stdout.getvalue())
         self.assertIn('"rows": 19', stdout.getvalue())
 
+    def test_sync_news_all_skips_fresh_symbols(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.side_effect = [
+            Mock(to_dict=lambda: {"symbol": "600519", "provider": "akshare", "rows": 9}, rows=9),
+        ]
+
+        class FakeNewsStore:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def get_symbol_last_updated_at(self, symbol: str):
+                if symbol == "000001":
+                    return "2099-01-01T00:00:00+00:00"
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv",
+            [
+                "prog",
+                "--news-db",
+                str(Path(tmp) / "news_sentiment.db"),
+                "sync-news",
+                "--all",
+                "--market",
+                "sz",
+                "--limit",
+                "20",
+                "--refresh-hours",
+                "12",
+            ],
+        ), patch("kronos_mvp.cli.StockNewsStore", return_value=FakeNewsStore()), patch(
+            "kronos_mvp.cli.build_default_news_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.StockNewsSyncService", return_value=sync_service
+        ), patch(
+            "kronos_mvp.cli.list_a_share_symbols", return_value=["600519", "000001"]
+        ) as list_symbols, redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        list_symbols.assert_called_once_with(market="sz")
+        sync_service.sync_symbol.assert_called_once_with("600519", limit=20)
+        output = stdout.getvalue()
+        self.assertIn('"scope": "all"', output)
+        self.assertIn('"skippedFresh": 1', output)
+
     def test_sync_all_uses_market_symbol_list(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [
