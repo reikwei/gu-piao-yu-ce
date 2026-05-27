@@ -185,7 +185,7 @@ python -m kronos_mvp.cli --news-db data/news_sentiment.db sync-news --all --limi
 如果你希望它每天自动跑，可使用独立 workflow [Update A-share News Data](.github/workflows/update-a-share-news-data.yml)：
 
 - 定时：北京时间工作日 18:35（cron `35 10 * * 1-5`）。
-- 定时任务默认执行“全市场增量同步”（`sync-news --all --refresh-hours 12`）。
+- 定时任务会按 `market/prefixes` 分片并行执行“全市场增量同步”（`sync-news --all --refresh-hours 12`），再自动合并成 `data/news_sentiment.db` 上传 VPS。
 - 可在 workflow_dispatch 手动填写 `symbols` 和 `limit`，仅同步指定股票。
 
 详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。若最新交易日缺少融资明细，融资 3 日趋势会自动回退到最近 3 个可用融资样本，并在文案中明确标注。综合结论区会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决；若行业侧样本尚未补齐，会明确提示当前仅完成大盘基准比较。价量确认层除了成交量，还会结合成交额归一化和换手率判断放量是否真实成立。
