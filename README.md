@@ -12,12 +12,14 @@
 - 前端静态页支持运行时 API Base 配置，可直接给 Cloudflare Pages 使用。
 - 网页默认针对未来 7 个交易日做概率分析，直接展示看涨/看跌判断、上涨概率、波动风险、终点区间和代表情景，而不是把所有路径原样铺开。
 - 详情页支持按按钮加载独立资金面分析，展示资金净额、资金净流入占比、融资余额、融资买入额，并给出综合结论。
+- 预测详情已接入消息面缓存，支持按股票读取最近新闻并给出情绪分层，参与综合结论裁决。
 - 页面支持访问密码保护；输入正确密码后，先进入股票输入首页，再进入单股票详情页。
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
 - GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并把 `data/candles.db` 上传到 VPS。
 - GitHub Actions 还可独立同步相对强弱缓存，并把 `data/relative_strength.db` 上传到 VPS。
 - GitHub Actions 还可独立在北京时间每周日 21:09 运行一次行业修复任务，专门补 `data/relative_strength.db` 里的行业映射和行业 K 线缓存。
 - GitHub Actions 还可独立在北京时间 18:09 同步资金面快照，写入独立 SQLite 缓存。
+- GitHub Actions 还可独立在北京时间 18:35 同步消息面缓存，写入 data/news_sentiment.db 并上传 VPS。
 - 相对强弱独立工作流当前默认在北京时间工作日 18:20 触发；若当天不是 A 股交易日，会在安装依赖后直接跳过同步和上传。
 - 推送到 GitHub main 后可自动把最新代码部署到 VPS，不覆盖 `data`、`.env` 和 `.venv`。
 
@@ -55,6 +57,7 @@ Copy-Item .env.example .env
 
 - KLINE_DB_PATH
 - RELATIVE_DB_PATH
+- NEWS_DB_PATH
 - PYTHONPATH
 - KRONOS_MODEL
 - KRONOS_TOKENIZER
@@ -161,6 +164,20 @@ python -m kronos_mvp.cli --relative-db data/relative_strength.db sync-relative -
 
 默认回补窗口现在是 30 天。因为相对强弱分析当前只使用 5 日和 20 日窗口，30 天缓存已经足够支撑日常结论，同时能降低空库或新库初始化时的同步耗时。
 
+如果你希望把消息面也提前同步到本地缓存，避免预测时临时抓取，可执行：
+
+```powershell
+python -m kronos_mvp.cli --news-db data/news_sentiment.db sync-news 600519 000001 --limit 30
+```
+
+`sync-news` 会将每只股票近期新闻写入 `data/news_sentiment.db`，预测接口优先读取本地缓存，再把消息面作为独立层并入综合判断。
+
+如果你希望它每天自动跑，可使用独立 workflow [Update A-share News Data](.github/workflows/update-a-share-news-data.yml)：
+
+- 定时：北京时间工作日 18:35（cron `35 10 * * 1-5`）。
+- 默认股票：`600519 000001`。
+- 可在 workflow_dispatch 手动填写 `symbols` 和 `limit`。
+
 详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。若最新交易日缺少融资明细，融资 3 日趋势会自动回退到最近 3 个可用融资样本，并在文案中明确标注。综合结论区会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决；若行业侧样本尚未补齐，会明确提示当前仅完成大盘基准比较。价量确认层除了成交量，还会结合成交额归一化和换手率判断放量是否真实成立。
 
 ## 运行测试
@@ -201,6 +218,6 @@ python -m unittest discover -s tests -v
 
 - 这是研究型预测工具，不是交易建议系统。
 - 当前 MVP 只做单股票日线预测，没有做分钟级实时推理。
-- 预测结果只基于 K 线序列，不包含公告、财报、舆情和资金面。
-- 资金面分析目前依赖独立的每日同步快照，不会直接替代 Kronos 主模型；综合结论只把资金面作为辅助修正层。
+- 预测主模型仍只基于 K 线序列；消息面与资金面属于附加因子层，不替代 Kronos 主模型。
+- 当前消息面为轻量关键词情绪打分，适合做辅助修正，不等同于完整研报级事件分析。
 - 如需微调，请参考 Kronos 官方仓库里的 Qlib 示例，当前仓库默认使用预训练模型直接推理。

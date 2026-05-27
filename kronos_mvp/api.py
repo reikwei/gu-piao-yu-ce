@@ -12,7 +12,7 @@ from functools import lru_cache
 from math import ceil
 from threading import Lock
 from time import monotonic
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,15 @@ from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers, lookup_a_share_name
 from .relative_strength import RelativeStrengthStore, RelativeStrengthSyncService, build_relative_strength_analysis
+from .news import (
+    DEFAULT_NEWS_ITEMS_LIMIT,
+    DEFAULT_NEWS_LOOKBACK_DAYS,
+    SHANGHAI_TZ,
+    StockNewsStore,
+    StockNewsSyncService,
+    build_default_news_providers,
+    build_news_sentiment_analysis,
+)
 from .storage import CandleStore
 from .sync import DataSyncService
 from .accounts import (
@@ -127,6 +136,25 @@ def _fund_analysis_history_days() -> int:
         return DEFAULT_FUND_HISTORY_DAYS
 
 
+def _news_analysis_lookback_days() -> int:
+    try:
+        return max(1, int(os.getenv("NEWS_ANALYSIS_LOOKBACK_DAYS", str(DEFAULT_NEWS_LOOKBACK_DAYS))))
+    except ValueError:
+        return DEFAULT_NEWS_LOOKBACK_DAYS
+
+
+def _news_analysis_items_limit() -> int:
+    try:
+        return max(1, int(os.getenv("NEWS_ANALYSIS_ITEMS_LIMIT", str(DEFAULT_NEWS_ITEMS_LIMIT))))
+    except ValueError:
+        return DEFAULT_NEWS_ITEMS_LIMIT
+
+
+def _news_auto_sync_on_predict_miss() -> bool:
+    value = os.getenv("NEWS_AUTO_SYNC_ON_PREDICT_MISS", "1")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _predict_rate_limit_requests() -> int:
     try:
         return max(0, int(os.getenv("PREDICT_RATE_LIMIT_REQUESTS", str(DEFAULT_PREDICT_RATE_LIMIT_REQUESTS))))
@@ -159,6 +187,7 @@ def create_app() -> FastAPI:
     store = CandleStore(os.getenv("KLINE_DB_PATH", "data/candles.db"))
     fund_store = FundFactorStore(os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
     relative_store = RelativeStrengthStore(os.getenv("RELATIVE_DB_PATH", "data/relative_strength.db"))
+    news_store = StockNewsStore(os.getenv("NEWS_DB_PATH", "data/news_sentiment.db"))
     account_store = AccountStore(_account_db_path(store))
     account_store.bootstrap_admin(os.getenv("ADMIN_USERNAME", "admin"), os.getenv("ADMIN_PASSWORD") or _access_password())
     payment_client = SailaPayClient()
@@ -177,12 +206,14 @@ def create_app() -> FastAPI:
         kline_updated_at = store.get_last_updated_at()
         fund_updated_at = fund_store.get_last_updated_at()
         relative_updated_at = relative_store.get_last_updated_at()
+        news_updated_at = news_store.get_last_updated_at()
         latest_trade_date = fund_store.get_latest_trade_date()
         return {
-            "updatedAt": _latest_timestamp(kline_updated_at, fund_updated_at, relative_updated_at),
+            "updatedAt": _latest_timestamp(kline_updated_at, fund_updated_at, relative_updated_at, news_updated_at),
             "klineUpdatedAt": kline_updated_at,
             "fundUpdatedAt": fund_updated_at,
             "relativeUpdatedAt": relative_updated_at,
+            "newsUpdatedAt": news_updated_at,
             "fundLatestTradeDate": latest_trade_date.isoformat() if latest_trade_date is not None else None,
         }
 
@@ -277,8 +308,24 @@ def create_app() -> FastAPI:
                         detail=f"最新数据同步失败，且本地没有可用的K线缓存：{sync_info['warning']}",
                     )
                 raise HTTPException(status_code=404, detail="该股票暂无本地K线数据，请先同步数据后再预测。")
+
+            news_items = news_store.get_latest(
+                symbol,
+                limit=_news_analysis_items_limit(),
+                max_age_days=_news_analysis_lookback_days(),
+            )
+            news_sync = {"attempted": False, "updated": False}
+            if not news_items and _news_auto_sync_on_predict_miss():
+                news_sync = _auto_sync_news(news_store, symbol)
+                news_items = news_store.get_latest(
+                    symbol,
+                    limit=_news_analysis_items_limit(),
+                    max_age_days=_news_analysis_lookback_days(),
+                )
+
             predictor = _build_predictor()
             result = predictor.predict(symbol, candles, horizon=horizon, paths=paths)
+            news_sentiment = build_news_sentiment_analysis(news_items)
             account_store.mark_prediction_succeeded(int(usage["id"]))
             fresh_user = account_store.get_user(int(user["id"]))
             symbol_name = lookup_a_share_name(symbol)
@@ -292,9 +339,10 @@ def create_app() -> FastAPI:
                     horizon,
                     symbol=symbol,
                     relative_strength_store=relative_store,
+                    news_sentiment=news_sentiment,
                 ),
                 "lookback": len(candles),
-                "sync": {**sync_info, "relativeStrength": relative_sync},
+                "sync": {**sync_info, "relativeStrength": relative_sync, "news": news_sync},
                 "billing": {**usage, "me": public_user(fresh_user) if fresh_user is not None else None},
             }
         except HTTPException as exc:
@@ -309,10 +357,14 @@ def create_app() -> FastAPI:
         _require_current_user(request, account_store)
         sync_info = {"attempted": False, "updated": False}
         if auto_sync:
-            sync_info = _auto_sync_funds(fund_store)
+            sync_payload = _auto_sync_funds(fund_store)
+            if isinstance(sync_payload, dict):
+                sync_info = sync_payload
         factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
         if not factors and auto_sync and not sync_info.get("attempted"):
-            sync_info = _auto_sync_funds(fund_store, force=True)
+            sync_payload = _auto_sync_funds(fund_store, force=True)
+            if isinstance(sync_payload, dict):
+                sync_info = sync_payload
             factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
         if not factors:
             if sync_info.get("attempted") and sync_info.get("warning"):
@@ -714,8 +766,12 @@ def _build_prediction_analysis(
     horizon: int,
     symbol: str | None = None,
     relative_strength_store: RelativeStrengthStore | None = None,
+    news_sentiment: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    effective_news_sentiment = news_sentiment or build_news_sentiment_analysis([])
     if not candles:
+        blended_probability = _blend_upside_probability(0.0, effective_news_sentiment)
+        blended_signal, blended_signal_label = _signal_from_probability(blended_probability)
         return {
             "horizon": int(horizon),
             "lastDate": None,
@@ -732,8 +788,12 @@ def _build_prediction_analysis(
             "meanProjectedReturn": 0.0,
             "projectedCloseLow": 0.0,
             "projectedCloseHigh": 0.0,
+            "signalBlended": blended_signal,
+            "signalBlendedLabel": blended_signal_label,
+            "upsideProbabilityBlended": blended_probability,
             "priceVolumeConfirmation": _empty_price_volume_confirmation(),
             "relativeStrength": build_relative_strength_analysis(symbol or result.symbol, [], relative_strength_store),
+            "newsSentiment": effective_news_sentiment,
         }
 
     last_candle = candles[-1]
@@ -751,6 +811,8 @@ def _build_prediction_analysis(
         projected_volatilities.append(_mean_abs_return([last_close, *closes]))
 
     if not end_closes:
+        blended_probability = _blend_upside_probability(0.0, effective_news_sentiment)
+        blended_signal, blended_signal_label = _signal_from_probability(blended_probability)
         return {
             "horizon": int(horizon),
             "lastDate": last_candle.date.isoformat(),
@@ -767,8 +829,12 @@ def _build_prediction_analysis(
             "meanProjectedReturn": 0.0,
             "projectedCloseLow": last_close,
             "projectedCloseHigh": last_close,
+            "signalBlended": blended_signal,
+            "signalBlendedLabel": blended_signal_label,
+            "upsideProbabilityBlended": blended_probability,
             "priceVolumeConfirmation": price_volume_confirmation,
             "relativeStrength": relative_strength,
+            "newsSentiment": effective_news_sentiment,
         }
 
     path_count = len(end_closes)
@@ -787,6 +853,8 @@ def _build_prediction_analysis(
     )
 
     signal, signal_label = _signal_from_probability(upside_probability)
+    blended_probability = _blend_upside_probability(upside_probability, effective_news_sentiment)
+    blended_signal, blended_signal_label = _signal_from_probability(blended_probability)
     return {
         "horizon": int(horizon),
         "lastDate": last_candle.date.isoformat(),
@@ -803,8 +871,12 @@ def _build_prediction_analysis(
         "meanProjectedReturn": mean_projected_return,
         "projectedCloseLow": min(end_closes),
         "projectedCloseHigh": max(end_closes),
+        "signalBlended": blended_signal,
+        "signalBlendedLabel": blended_signal_label,
+        "upsideProbabilityBlended": blended_probability,
         "priceVolumeConfirmation": price_volume_confirmation,
         "relativeStrength": relative_strength,
+        "newsSentiment": effective_news_sentiment,
     }
 
 
@@ -1248,6 +1320,39 @@ def _auto_sync_funds(store: FundFactorStore, force: bool = False) -> dict[str, o
         }
 
 
+def _auto_sync_news(store: StockNewsStore, symbol: str, force: bool = False) -> dict[str, object]:
+    last_updated_at = store.get_symbol_last_updated_at(symbol)
+    if not force and last_updated_at:
+        normalized = last_updated_at[:-1] + "+00:00" if last_updated_at.endswith("Z") else last_updated_at
+        try:
+            last_moment = datetime.fromisoformat(normalized)
+            if last_moment.tzinfo is None:
+                last_moment = last_moment.replace(tzinfo=SHANGHAI_TZ)
+            if datetime.now(SHANGHAI_TZ) - last_moment.astimezone(SHANGHAI_TZ) < timedelta(hours=12):
+                return {
+                    "attempted": False,
+                    "updated": False,
+                    "latestUpdatedAt": last_updated_at,
+                }
+        except ValueError:
+            pass
+
+    service = StockNewsSyncService(store=store, providers=build_default_news_providers())
+    try:
+        result = service.sync_symbol(symbol)
+        return {
+            "attempted": True,
+            "updated": bool(result.rows > 0),
+            **result.to_dict(),
+        }
+    except ProviderError as exc:
+        return {
+            "attempted": True,
+            "updated": False,
+            "warning": str(exc),
+        }
+
+
 def _latest_timestamp(*values: str | None) -> str | None:
     latest_value: str | None = None
     latest_moment: datetime | None = None
@@ -1271,6 +1376,13 @@ def _mean_abs_return(values: list[float]) -> float:
         if prev > 0:
             returns.append(abs((current - prev) / prev))
     return sum(returns) / len(returns) if returns else 0.0
+
+
+def _blend_upside_probability(base_probability: float, news_sentiment: dict[str, object]) -> float:
+    news_score = float(news_sentiment.get("score", 50) or 50)
+    sentiment_bias = (news_score - 50.0) / 50.0
+    blended = base_probability * 0.82 + (0.5 + sentiment_bias * 0.5) * 0.18
+    return max(0.0, min(1.0, blended))
 
 
 def _signal_from_probability(upside_probability: float) -> tuple[str, str]:

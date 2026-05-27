@@ -1445,7 +1445,7 @@
 
           <article class='card detail-card'>
             <h2>综合结论</h2>
-            <p id='combined-summary'>当前先显示 Kronos 主模型与价量确认；资金面数据加载后，会补充带冲突裁决分的综合解释。</p>
+            <p id='combined-summary'>当前先显示 Kronos 主模型、消息面与价量确认；资金面数据加载后，会补充带冲突裁决分的综合解释。</p>
             <div class='scenario-list' id='combined-conclusion-list'>
               <div class='scenario-row neutral'>
                 <header>
@@ -1453,6 +1453,13 @@
                   <span class='scenario-value'>--</span>
                 </header>
                 <p>等待预测完成后展示主模型结论。</p>
+              </div>
+              <div class='scenario-row neutral'>
+                <header>
+                  <span class='scenario-title'>消息面层</span>
+                  <span class='scenario-value'>--</span>
+                </header>
+                <p>等待新闻情绪样本加载。</p>
               </div>
               <div class='scenario-row neutral'>
                 <header>
@@ -2259,7 +2266,11 @@
       const list = document.getElementById('combined-conclusion-list');
       const priceVolume = kronosAnalysis && kronosAnalysis.priceVolumeConfirmation ? kronosAnalysis.priceVolumeConfirmation : null;
       const relativeStrength = kronosAnalysis && kronosAnalysis.relativeStrength ? kronosAnalysis.relativeStrength : null;
+      const newsSentiment = kronosAnalysis && kronosAnalysis.newsSentiment ? kronosAnalysis.newsSentiment : null;
       const kronosLabel = kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--';
+      const newsLabel = newsSentiment && newsSentiment.available
+        ? `${newsSentiment.signalLabel || '中性'} ${newsSentiment.score || 50}/100`
+        : '未加载';
       const fundLabel = fundAnalysis ? `${fundAnalysis.signalLabel || '中性'} ${fundAnalysis.score || 0}/100` : '未加载';
       const priceLabel = priceVolume ? `${priceVolume.signalLabel || '价量中性'} ${priceVolume.score || 0}/100` : '未加载';
       const relativeLabel = relativeStrength ? `${relativeStrength.signalLabel || '待同步'} ${relativeStrength.score || 50}/100` : '未加载';
@@ -2267,6 +2278,7 @@
       document.getElementById('combined-summary').textContent = combined.summary;
       list.innerHTML = [
         `<div class='scenario-row neutral'><header><span class='scenario-title'>Kronos 主模型</span><span class='scenario-value'>${escapeHtml(kronosLabel)}</span></header><p>${escapeHtml(buildKronosSummary(kronosAnalysis))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>消息面层</span><span class='scenario-value'>${escapeHtml(newsLabel)}</span></header><p>${escapeHtml(buildNewsSummary(newsSentiment))}</p></div>`,
         `<div class='scenario-row neutral'><header><span class='scenario-title'>资金面因子层</span><span class='scenario-value'>${escapeHtml(fundLabel)}</span></header><p>${escapeHtml(buildFundSummary(fundAnalysis, fundError))}</p></div>`,
         `<div class='scenario-row neutral'><header><span class='scenario-title'>价量确认层</span><span class='scenario-value'>${escapeHtml(priceLabel)}</span></header><p>${escapeHtml(buildPriceVolumeSummary(priceVolume))}</p></div>`,
         `<div class='scenario-row neutral'><header><span class='scenario-title'>相对强弱层</span><span class='scenario-value'>${escapeHtml(relativeLabel)}</span></header><p>${escapeHtml(buildRelativeStrengthSummary(relativeStrength))}</p></div>`,
@@ -2286,6 +2298,17 @@
         return errorMessage || '资金面数据加载后，这里会显示资金面结论。';
       }
       return analysis.summary || `资金面评分 ${analysis.score || 0}/100，结论 ${analysis.signalLabel || '中性'}。`;
+    }
+
+    function buildNewsSummary(analysis) {
+      if (!analysis || !analysis.available) {
+        return '消息面样本暂不可用，综合结论暂不使用新闻情绪加权。';
+      }
+      const headline = Array.isArray(analysis.headlines) && analysis.headlines.length > 0
+        ? analysis.headlines[0]
+        : null;
+      const firstTitle = headline && headline.title ? `最新：${headline.title}` : '暂无最新标题摘要。';
+      return `${analysis.summary || '消息面已加载。'} ${firstTitle}`.trim();
     }
 
     function buildPriceVolumeSummary(analysis) {
@@ -2312,13 +2335,21 @@
       return 0;
     }
 
-    function buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength) {
+    function buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength, newsSentiment) {
       const contributors = [];
       if (kronosAnalysis) {
         contributors.push({
           bias: signalBias(kronosAnalysis.signal),
           strength: Math.max(0.18, Math.min(1, Number(kronosAnalysis.confidence || 0))),
-          weight: 0.42,
+          weight: 0.36,
+        });
+      }
+      if (newsSentiment && newsSentiment.available) {
+        const strength = Math.min(1, Math.abs((Number(newsSentiment.score || 50) - 50) / 50));
+        contributors.push({
+          bias: signalBias(newsSentiment.signal),
+          strength: Math.max(0.1, strength),
+          weight: 0.14,
         });
       }
       if (fundAnalysis) {
@@ -2326,7 +2357,7 @@
         contributors.push({
           bias: signalBias(fundAnalysis.signal),
           strength: Math.max(0.1, strength),
-          weight: 0.28,
+          weight: 0.24,
         });
       }
       if (priceVolume) {
@@ -2334,7 +2365,7 @@
         contributors.push({
           bias: signalBias(priceVolume.signal),
           strength: Math.max(0.1, strength),
-          weight: 0.15,
+          weight: 0.13,
         });
       }
       if (relativeStrength && relativeStrength.available !== false) {
@@ -2342,7 +2373,7 @@
         contributors.push({
           bias: signalBias(relativeStrength.signal),
           strength: Math.max(0.1, strength),
-          weight: 0.15,
+          weight: 0.13,
         });
       }
 
@@ -2389,11 +2420,12 @@
       return `${layers.slice(0, -1).join('、')}和${layers[layers.length - 1]}`;
     }
 
-    function collectDirectionalLayers(kronosSignal, fundSignal, priceSignal, relativeSignal) {
+    function collectDirectionalLayers(kronosSignal, newsSignal, fundSignal, priceSignal, relativeSignal) {
       const bullish = [];
       const bearish = [];
       const pairs = [
         ['Kronos', kronosSignal],
+        ['消息面', newsSignal],
         ['资金面', fundSignal],
         ['价量确认', priceSignal],
         ['相对强弱', relativeSignal],
@@ -2420,19 +2452,21 @@
       }
       const priceVolume = kronosAnalysis.priceVolumeConfirmation || null;
       const relativeStrength = kronosAnalysis.relativeStrength || null;
-      const verdict = buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength);
+      const newsSentiment = kronosAnalysis.newsSentiment || null;
+      const verdict = buildConflictVerdict(kronosAnalysis, fundAnalysis, priceVolume, relativeStrength, newsSentiment);
       if (!fundAnalysis) {
         return {
           tone: verdict.tone,
           label: `${verdict.label} ${verdict.score}/100`,
           summary: fundError
-            ? `${fundError} 当前先参考 Kronos、价量确认和相对强弱，临时裁决分 ${verdict.score}/100。`
-            : `当前先参考 Kronos、价量确认和相对强弱，临时裁决分 ${verdict.score}/100；资金面加载后会补充最终修正。`,
-          detail: `${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 主模型当前判断为${kronosAnalysis.signalLabel || '震荡'}，先不单靠一层信号放大结论。`.trim(),
+            ? `${fundError} 当前先参考 Kronos、消息面、价量确认和相对强弱，临时裁决分 ${verdict.score}/100。`
+            : `当前先参考 Kronos、消息面、价量确认和相对强弱，临时裁决分 ${verdict.score}/100；资金面加载后会补充最终修正。`,
+          detail: `${buildNewsSummary(newsSentiment)} ${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 主模型当前判断为${kronosAnalysis.signalLabel || '震荡'}，先不单靠一层信号放大结论。`.trim(),
         };
       }
 
       const kronosSignal = kronosAnalysis.signal || 'neutral';
+      const newsSignal = newsSentiment && newsSentiment.available ? newsSentiment.signal || 'neutral' : 'neutral';
       const fundSignal = fundAnalysis.signal || 'neutral';
       const priceSignal = priceVolume ? priceVolume.signal || 'neutral' : 'neutral';
       const relativeSignal = relativeStrength ? relativeStrength.signal || 'neutral' : 'neutral';
@@ -2443,7 +2477,7 @@
       const patternHint = fundPattern ? `资金面当前更像${fundPattern}。` : '';
       const kronosSupport = sideSupport(kronosSignal, priceSignal, relativeSignal);
       const fundSupport = sideSupport(fundSignal, priceSignal, relativeSignal);
-      const directionalLayers = collectDirectionalLayers(kronosSignal, fundSignal, priceSignal, relativeSignal);
+      const directionalLayers = collectDirectionalLayers(kronosSignal, newsSignal, fundSignal, priceSignal, relativeSignal);
       const hasLayerConflict = directionalLayers.bullish.length > 0 && directionalLayers.bearish.length > 0;
 
       if (directConflict) {
@@ -2476,7 +2510,7 @@
           tone: verdict.tone,
           label: `${verdict.label} ${verdict.score}/100`,
           summary: `${formatLayerNames(directionalLayers.bearish)}偏空、${formatLayerNames(directionalLayers.bullish)}偏多，当前仍有分歧，冲突裁决分 ${verdict.score}/100，综合结论暂维持 ${verdict.label}。`,
-          detail: `${buildKronosSummary(kronosAnalysis)} ${buildFundSummary(fundAnalysis, fundError)} ${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 当前仍属分歧格局，需继续观察下一交易日是否形成单边共振。`.trim(),
+            detail: `${buildKronosSummary(kronosAnalysis)} ${buildNewsSummary(newsSentiment)} ${buildFundSummary(fundAnalysis, fundError)} ${buildPriceVolumeSummary(priceVolume)} ${buildRelativeStrengthSummary(relativeStrength)} 当前仍属分歧格局，需继续观察下一交易日是否形成单边共振。`.trim(),
         };
       }
 

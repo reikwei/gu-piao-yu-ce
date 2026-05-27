@@ -1,0 +1,130 @@
+name: Update A-share News Data
+
+concurrency:
+  group: a-share-news-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Space-separated stock symbols to sync news cache"
+        required: false
+        default: "600519 000001"
+      limit:
+        description: "Maximum raw news rows fetched per symbol"
+        required: false
+        default: "30"
+  schedule:
+    - cron: "35 10 * * 1-5"
+
+jobs:
+  update_news_cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NEWS_DB_PATH: data/news_sentiment.db
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DATA_DIR: ${{ secrets.VPS_DATA_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install data dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.sync.txt
+
+      - name: Check A-share trading day
+        id: trade_day_guard
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          from kronos_mvp.funds import latest_a_share_trade_date
+
+          shanghai_today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+          latest_trade_date = latest_a_share_trade_date()
+          should_skip = shanghai_today != latest_trade_date
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"should_skip={'true' if should_skip else 'false'}\n")
+              fh.write(f"shanghai_today={shanghai_today.isoformat()}\n")
+              fh.write(f"latest_trade_date={latest_trade_date.isoformat()}\n")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("### News trading-day guard\n\n")
+              fh.write(f"- today: {shanghai_today.isoformat()}\n")
+              fh.write(f"- latest_trade_date: {latest_trade_date.isoformat()}\n")
+              fh.write(f"- skip_sync: {'true' if should_skip else 'false'}\n\n")
+          PY
+
+      - name: Restore news cache
+        if: ${{ github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.NEWS_DB_PATH }}
+          key: a-share-news-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            a-share-news-${{ github.ref_name }}-
+
+      - name: Sync stock news cache
+        if: ${{ github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true' }}
+        run: |
+          mkdir -p data
+          SYMBOLS="${{ github.event.inputs.symbols }}"
+          LIMIT="${{ github.event.inputs.limit }}"
+
+          if [ -z "${SYMBOLS}" ]; then
+            SYMBOLS="600519 000001"
+          fi
+          if [ -z "${LIMIT}" ]; then
+            LIMIT="30"
+          fi
+
+          python -m kronos_mvp.cli --news-db "${NEWS_DB_PATH}" sync-news ${SYMBOLS} --limit "${LIMIT}"
+
+      - name: Upload news cache artifact
+        if: ${{ always() && (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: news-sentiment-db
+          if-no-files-found: ignore
+          path: |
+            data/news_sentiment.db
+
+      - name: Save news cache
+        if: ${{ always() && (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.NEWS_DB_PATH }}
+          key: a-share-news-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload news cache to VPS via password
+        if: ${{ (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') && env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_DATA_DIR != '' && (env.VPS_PASSWORD != '' || (env.VPS_SSH_KEY != '' && !contains(env.VPS_SSH_KEY, 'BEGIN '))) }}
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD != '' && env.VPS_PASSWORD || env.VPS_SSH_KEY }}
+          source: "data/news_sentiment.db"
+          target: ${{ env.VPS_DATA_DIR }}
+
+      - name: Upload news cache to VPS via SSH key
+        if: ${{ (github.event_name != 'schedule' || steps.trade_day_guard.outputs.should_skip != 'true') && env.VPS_HOST != '' && env.VPS_USER != '' && env.VPS_SSH_KEY != '' && env.VPS_PASSWORD == '' && env.VPS_DATA_DIR != '' && contains(env.VPS_SSH_KEY, 'BEGIN ') }}
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          source: "data/news_sentiment.db"
+          target: ${{ env.VPS_DATA_DIR }}

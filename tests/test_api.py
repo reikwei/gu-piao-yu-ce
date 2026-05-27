@@ -130,6 +130,21 @@ class FakeRelativeStore:
         return []
 
 
+class FakeNewsStore:
+    def __init__(self, *args, last_updated_at: str | None = None, **kwargs):
+        self.db_path = Path("fake_news.db")
+        self.last_updated_at = last_updated_at
+
+    def get_last_updated_at(self):
+        return self.last_updated_at
+
+    def get_latest(self, symbol: str, limit: int = 8, max_age_days: int = 3):
+        return []
+
+    def get_symbol_last_updated_at(self, symbol: str):
+        return self.last_updated_at
+
+
 def _test_env(tmp: str | Path, **overrides: str) -> dict[str, str]:
     path = Path(tmp)
     env = {
@@ -214,6 +229,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("name === 'logout'", response.text)
         self.assertIn("资金面分析", response.text)
         self.assertIn("综合结论", response.text)
+        self.assertIn("消息面层", response.text)
         self.assertIn("相对强弱层", response.text)
         self.assertIn("重新加载资金面数据", response.text)
         self.assertIn("数据更新时间", response.text)
@@ -284,11 +300,14 @@ class ApiTests(unittest.TestCase):
             last_updated_at="2026-05-25T18:09:00+08:00",
         )
         relative_store = FakeRelativeStore(last_updated_at="2026-05-25T17:00:00+08:00")
+        news_store = FakeNewsStore(last_updated_at="2026-05-25T15:00:00+08:00")
 
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
             "kronos_mvp.api.CandleStore", return_value=store
         ), patch("kronos_mvp.api.FundFactorStore", return_value=fund_store), patch(
             "kronos_mvp.api.RelativeStrengthStore", return_value=relative_store
+        ), patch(
+            "kronos_mvp.api.StockNewsStore", return_value=news_store
         ):
             client = TestClient(create_app())
 
@@ -300,6 +319,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["klineUpdatedAt"], "2026-05-25T16:30:00+08:00")
         self.assertEqual(payload["fundUpdatedAt"], "2026-05-25T18:09:00+08:00")
         self.assertEqual(payload["relativeUpdatedAt"], "2026-05-25T17:00:00+08:00")
+        self.assertEqual(payload["newsUpdatedAt"], "2026-05-25T15:00:00+08:00")
         self.assertEqual(payload["fundLatestTradeDate"], "2026-05-23")
 
     def test_register_grants_ten_free_credits(self):
@@ -483,6 +503,8 @@ class ApiTests(unittest.TestCase):
         self.assertGreater(analysis["meanProjectedClose"], analysis["lastClose"])
         self.assertIn("priceVolumeConfirmation", analysis)
         self.assertIn("relativeStrength", analysis)
+        self.assertIn("newsSentiment", analysis)
+        self.assertIn("upsideProbabilityBlended", analysis)
         self.assertIn("score", analysis["priceVolumeConfirmation"])
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
@@ -555,6 +577,8 @@ class ApiTests(unittest.TestCase):
         self.assertIsNone(analysis["lastDate"])
         self.assertEqual(analysis["lastClose"], 0.0)
         self.assertEqual(analysis["priceVolumeConfirmation"]["signal"], "neutral")
+        self.assertIn("newsSentiment", analysis)
+        self.assertFalse(analysis["newsSentiment"]["available"])
 
     def test_build_prediction_analysis_includes_bullish_relative_strength(self):
         with tempfile.TemporaryDirectory() as tmp:

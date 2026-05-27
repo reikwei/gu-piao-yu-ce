@@ -114,6 +114,36 @@ class CliTests(unittest.TestCase):
         sync_service.sync_market.assert_called_once_with(history_days=30, force_refresh_mappings=True)
         self.assertIn('"forceRefreshMappings": true', stdout.getvalue())
 
+    def test_sync_news_emits_summary(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.side_effect = [
+            Mock(to_dict=lambda: {"symbol": "600519", "provider": "akshare", "rows": 12}, rows=12),
+            Mock(to_dict=lambda: {"symbol": "000001", "provider": "akshare", "rows": 7}, rows=7),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv",
+            [
+                "prog",
+                "--news-db",
+                str(Path(tmp) / "news_sentiment.db"),
+                "sync-news",
+                "600519",
+                "000001",
+                "--limit",
+                "25",
+            ],
+        ), patch("kronos_mvp.cli.StockNewsStore"), patch(
+            "kronos_mvp.cli.build_default_news_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.StockNewsSyncService", return_value=sync_service
+        ), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        self.assertEqual(sync_service.sync_symbol.call_args_list, [call("600519", limit=25), call("000001", limit=25)])
+        self.assertIn('"mode": "news"', stdout.getvalue())
+        self.assertIn('"rows": 19', stdout.getvalue())
+
     def test_sync_all_uses_market_symbol_list(self):
         sync_service = Mock()
         sync_service.sync_symbol.side_effect = [

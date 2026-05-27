@@ -10,6 +10,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .funds import DEFAULT_FUND_HISTORY_DAYS, FundFactorStore, FundFactorSyncService, build_default_fund_providers
+from .news import StockNewsStore, StockNewsSyncService, build_default_news_providers
 from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .relative_strength import DEFAULT_RELATIVE_HISTORY_DAYS, RelativeStrengthStore, RelativeStrengthSyncService
@@ -29,6 +30,7 @@ def main() -> None:
     parser.add_argument("--db", default=os.getenv("KLINE_DB_PATH", "data/candles.db"))
     parser.add_argument("--fund-db", default=os.getenv("FUND_DB_PATH", "data/fund_factors.db"))
     parser.add_argument("--relative-db", default=os.getenv("RELATIVE_DB_PATH", "data/relative_strength.db"))
+    parser.add_argument("--news-db", default=os.getenv("NEWS_DB_PATH", "data/news_sentiment.db"))
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sync_parser = subparsers.add_parser("sync", help="sync daily K-line data")
@@ -75,6 +77,15 @@ def main() -> None:
         help="force a fresh industry mapping pull instead of reusing a recent mapping cache",
     )
 
+    sync_news_parser = subparsers.add_parser("sync-news", help="sync per-symbol stock news sentiment cache")
+    sync_news_parser.add_argument("symbols", nargs="+")
+    sync_news_parser.add_argument(
+        "--limit",
+        type=int,
+        default=int(os.getenv("NEWS_SYNC_LIMIT", "30")),
+        help="maximum raw news rows fetched per symbol",
+    )
+
     predict_parser = subparsers.add_parser("predict", help="run Kronos prediction from local cache")
     predict_parser.add_argument("symbol")
     predict_parser.add_argument("--horizon", type=int, default=5)
@@ -102,6 +113,8 @@ def main() -> None:
         _run_sync_funds(args)
     elif args.command == "sync-relative":
         _run_sync_relative(args)
+    elif args.command == "sync-news":
+        _run_sync_news(args)
     elif args.command == "predict":
         store = CandleStore(args.db)
         candles = store.get_latest(args.symbol, limit=args.lookback)
@@ -279,6 +292,43 @@ def _run_sync_relative(args: argparse.Namespace) -> None:
                     "industryCount": len(result.industry_names),
                     "rows": result.rows,
                     "warnings": list(result.warnings),
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def _run_sync_news(args: argparse.Namespace) -> None:
+    symbols = _normalize_symbols(args.symbols)
+    store = StockNewsStore(args.news_db)
+    service = StockNewsSyncService(store=store, providers=build_default_news_providers())
+
+    total_rows = 0
+    succeeded = 0
+    failed = 0
+    for symbol in symbols:
+        try:
+            result = service.sync_symbol(symbol, limit=max(1, int(args.limit)))
+        except Exception as exc:
+            failed += 1
+            print(json.dumps({"ok": False, "symbol": symbol, "error": str(exc)}, ensure_ascii=False))
+            continue
+
+        succeeded += 1
+        total_rows += int(result.rows)
+        print(json.dumps({"ok": True, **result.to_dict()}, ensure_ascii=False))
+
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "mode": "news",
+                    "symbols": len(symbols),
+                    "succeeded": succeeded,
+                    "failed": failed,
+                    "rows": total_rows,
+                    "limit": max(1, int(args.limit)),
                 }
             },
             ensure_ascii=False,
