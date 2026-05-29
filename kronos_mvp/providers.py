@@ -600,6 +600,25 @@ def _fetch_akshare_index_daily(ak: object, symbol: str, start_date: date | None)
             return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
         errors.append("eastmoney: returned no index rows")
 
+    index_hist = getattr(ak, "index_zh_a_hist", None)
+    if index_hist is not None:
+        try:
+            frame = _call_with_retries(
+                lambda: index_hist(
+                    symbol=_akshare_index_plain_symbol(symbol),
+                    period="daily",
+                    start_date=_format_compact_date(start_date) or "19900101",
+                    end_date="20500101",
+                ),
+                attempts=3,
+            )
+        except Exception as exc:
+            errors.append(f"eastmoney_hist: {exc}")
+        else:
+            if frame is not None and not frame.empty:
+                return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+            errors.append("eastmoney_hist: returned no index rows")
+
     try:
         frame = _call_with_retries(lambda: ak.stock_zh_index_daily(symbol=symbol), attempts=3)
     except Exception as exc:
@@ -612,6 +631,13 @@ def _fetch_akshare_index_daily(ak: object, symbol: str, start_date: date | None)
     if start_date is not None and any("returned no index rows" in error for error in errors):
         return []
     raise ProviderError("; ".join(errors) if errors else "akshare returned no index rows")
+
+
+def _akshare_index_plain_symbol(symbol: str) -> str:
+    compact = str(symbol or "").strip().lower().replace(".", "")
+    if len(compact) == 8 and compact[:2] in {"sh", "sz", "bj"} and compact[2:].isdigit():
+        return compact[2:]
+    return compact
 
 
 def _build_candles_from_akshare_hist(frame) -> list[Candle]:

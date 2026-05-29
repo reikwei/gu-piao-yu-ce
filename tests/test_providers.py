@@ -171,6 +171,52 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual(result[0].date, date(2026, 5, 23))
         self.assertEqual(result[0].close, 3235.0)
 
+    def test_akshare_daily_fetch_prefers_amount_preserving_index_fallback(self):
+        calls = []
+
+        def stock_zh_index_daily_em(symbol, start_date, end_date):
+            calls.append(("eastmoney", symbol, start_date, end_date))
+            raise ConnectionError("remote closed")
+
+        def index_zh_a_hist(symbol, period, start_date, end_date):
+            calls.append(("eastmoney_hist", symbol, period, start_date, end_date))
+            return pd.DataFrame(
+                {
+                    "日期": ["2026-05-22", "2026-05-23"],
+                    "开盘": [3200.0, 3210.0],
+                    "最高": [3230.0, 3240.0],
+                    "最低": [3190.0, 3205.0],
+                    "收盘": [3220.0, 3235.0],
+                    "成交量": [1000000, 1100000],
+                    "成交额": [200000000, 210000000],
+                }
+            )
+
+        def stock_zh_index_daily(symbol):
+            raise AssertionError("should prefer amount-preserving index fallback before sina daily")
+
+        fake_ak = SimpleNamespace(
+            stock_zh_index_daily_em=stock_zh_index_daily_em,
+            index_zh_a_hist=index_zh_a_hist,
+            stock_zh_index_daily=stock_zh_index_daily,
+        )
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("sh000001", start_date=date(2026, 5, 23))
+
+        self.assertEqual(
+            calls,
+            [
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("eastmoney_hist", "000001", "daily", "20260523", "20500101"),
+            ],
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].date, date(2026, 5, 23))
+        self.assertEqual(result[0].amount, 210000000)
+
     def test_akshare_cdr_daily_fetch_uses_cdr_source_for_689_symbols(self):
         cdr_calls = []
 
