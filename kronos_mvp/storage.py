@@ -181,6 +181,40 @@ class CandleStore:
             self._touch_last_updated_at(conn)
         return len(rows)
 
+    def replace_symbol_history_from_date(self, symbol: str, candles: list[Candle], from_date: date) -> int:
+        if not candles:
+            return 0
+
+        normalized = normalize_symbol(symbol)
+        rows = [
+            (
+                normalized,
+                candle.date.isoformat(),
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+                candle.amount,
+                candle.turnover,
+            )
+            for candle in candles
+        ]
+        with self._connection() as conn:
+            conn.execute(
+                "DELETE FROM candles WHERE symbol = ? AND date >= ?",
+                (normalized, from_date.isoformat()),
+            )
+            conn.executemany(
+                """
+                INSERT INTO candles(symbol, date, open, high, low, close, volume, amount, turnover)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            self._touch_last_updated_at(conn)
+        return len(rows)
+
     def get_last_updated_at(self) -> str | None:
         with self._connection() as conn:
             row = conn.execute(

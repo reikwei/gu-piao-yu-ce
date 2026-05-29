@@ -31,11 +31,9 @@ class DataSyncService:
                 if full_refresh:
                     earliest_fetched_date = min(candle.date for candle in candles)
                     if earliest_cached_date is not None and earliest_fetched_date > earliest_cached_date:
-                        raise ProviderError(
-                            "full refresh returned partial history: "
-                            f"cached_start={earliest_cached_date.isoformat()}, fetched_start={earliest_fetched_date.isoformat()}"
-                        )
-                    rows = self.store.replace_symbol_history(normalized, candles)
+                        rows = self.store.replace_symbol_history_from_date(normalized, candles, earliest_fetched_date)
+                    else:
+                        rows = self.store.replace_symbol_history(normalized, candles)
                 else:
                     rows = self.store.upsert_many(normalized, candles)
                 return SyncResult(symbol=normalized, provider=provider.name, rows=rows)
