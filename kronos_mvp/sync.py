@@ -4,7 +4,8 @@ from datetime import timedelta
 
 from .models import SyncResult
 from .providers import DataProvider, ProviderError
-from .storage import CandleStore, normalize_symbol
+from .instruments import normalize_instrument_symbol
+from .storage import CandleStore
 
 
 class DataSyncService:
@@ -13,7 +14,7 @@ class DataSyncService:
         self.providers = providers
 
     def sync_symbol(self, symbol: str, full_refresh: bool = False) -> SyncResult:
-        normalized = normalize_symbol(symbol)
+        normalized = normalize_instrument_symbol(symbol)
         earliest_cached_date = self.store.get_earliest_date(normalized) if full_refresh else None
         latest_date = None if full_refresh else self.store.get_latest_date(normalized)
         start_date = None if latest_date is None else latest_date + timedelta(days=1)

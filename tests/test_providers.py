@@ -54,6 +54,9 @@ class ProviderSymbolListTests(unittest.TestCase):
         with patch.dict("sys.modules", {"akshare": fake_ak}):
             self.assertEqual(lookup_a_share_name("600835"), "上海机电")
 
+    def test_lookup_market_index_name_without_stock_symbol_table(self):
+        self.assertEqual(lookup_a_share_name("sh000001"), "上证指数")
+
     def test_infer_a_share_market_maps_supported_exchanges(self):
         self.assertEqual(infer_a_share_market("600519"), "sh")
         self.assertEqual(infer_a_share_market("000001"), "sz")
@@ -103,6 +106,33 @@ class ProviderSymbolListTests(unittest.TestCase):
 
 
 class ProviderDailyFetchTests(unittest.TestCase):
+    def test_akshare_daily_fetch_reads_market_index_history(self):
+        calls = []
+
+        def stock_zh_index_daily_em(symbol, start_date, end_date):
+            calls.append((symbol, start_date, end_date))
+            return pd.DataFrame(
+                {
+                    "日期": ["2026-05-22", "2026-05-23"],
+                    "开盘": [3200.0, 3210.0],
+                    "最高": [3230.0, 3240.0],
+                    "最低": [3190.0, 3205.0],
+                    "收盘": [3220.0, 3235.0],
+                    "成交量": [1000000, 1100000],
+                    "成交额": [200000000, 210000000],
+                }
+            )
+
+        fake_ak = SimpleNamespace(stock_zh_index_daily_em=stock_zh_index_daily_em)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("上证指数", start_date=date(2026, 5, 23))
+
+        self.assertEqual(calls, [("sh000001", "20260523", "20500101")])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].date, date(2026, 5, 23))
+        self.assertEqual(result[0].close, 3235.0)
+
     def test_akshare_cdr_daily_fetch_uses_cdr_source_for_689_symbols(self):
         cdr_calls = []
 

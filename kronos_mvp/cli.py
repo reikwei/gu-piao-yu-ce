@@ -14,7 +14,8 @@ from .news import StockNewsStore, StockNewsSyncService, build_default_news_provi
 from .predictors import KronosPredictor
 from .providers import build_default_providers, list_a_share_symbols
 from .relative_strength import DEFAULT_RELATIVE_HISTORY_DAYS, RelativeStrengthStore, RelativeStrengthSyncService
-from .storage import CandleStore, normalize_symbol
+from .instruments import normalize_instrument_symbol
+from .storage import CandleStore
 from .sync import DataSyncService
 from .accounts import AccountStore
 
@@ -482,7 +483,7 @@ def _run_all_market_sync(
                     json.dumps(
                         {
                             "ok": False,
-                            "symbol": normalize_symbol(symbol),
+                            "symbol": normalize_instrument_symbol(symbol),
                             "error": error_text,
                             "retrying": True,
                             "attempt": attempt,
@@ -500,7 +501,7 @@ def _run_all_market_sync(
             state["summary"]["processed"] += 1
             state["failed_symbols"].append(
                 {
-                    "symbol": normalize_symbol(symbol),
+                    "symbol": normalize_instrument_symbol(symbol),
                     "error": error_text,
                     "attempts": attempt,
                 }
@@ -510,7 +511,7 @@ def _run_all_market_sync(
                 json.dumps(
                     {
                         "ok": False,
-                        "symbol": normalize_symbol(symbol),
+                        "symbol": normalize_instrument_symbol(symbol),
                         "error": error_text,
                         "retrying": False,
                         "attempt": attempt,
@@ -681,7 +682,7 @@ def _load_progress_state(
         return payload
 
     failed_symbols = [
-        normalize_symbol(item.get("symbol", ""))
+        normalize_instrument_symbol(item.get("symbol", ""))
         for item in payload.get("failed_symbols", [])
         if isinstance(item, dict) and item.get("symbol")
     ]
@@ -734,7 +735,7 @@ def _normalize_symbols(symbols: object) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for symbol in symbols:
-        code = normalize_symbol(str(symbol))
+        code = normalize_instrument_symbol(str(symbol))
         if code and code not in seen:
             seen.add(code)
             normalized.append(code)

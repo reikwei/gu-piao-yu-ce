@@ -30,6 +30,7 @@ from .funds import (
     build_fund_analysis,
     latest_a_share_trade_date,
 )
+from .instruments import instrument_info, is_market_index_symbol, normalize_instrument_symbol
 from .models import SyncResult
 from .predictors import KronosPredictor
 from .providers import ProviderError, build_default_providers, lookup_a_share_name
@@ -288,8 +289,10 @@ def create_app() -> FastAPI:
     ) -> dict[str, object]:
         user = _require_current_user(request, account_store)
         _enforce_prediction_rate_limit(request, user)
+        canonical_symbol = normalize_instrument_symbol(symbol)
+        is_index = is_market_index_symbol(canonical_symbol)
         try:
-            usage = account_store.authorize_prediction(int(user["id"]), symbol)
+            usage = account_store.authorize_prediction(int(user["id"]), canonical_symbol)
         except AccountError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -297,50 +300,65 @@ def create_app() -> FastAPI:
             sync_info = {"attempted": False, "updated": False}
             relative_sync = {"attempted": False, "updated": False}
             if auto_sync:
-                sync_info = _auto_sync_symbol(store, symbol)
-                relative_sync = _auto_sync_relative_strength(relative_store, symbol)
+                sync_info = _auto_sync_symbol(store, canonical_symbol)
+                relative_sync = (
+                    {"attempted": False, "updated": False, "skipped": True, "reason": "market_index"}
+                    if is_index
+                    else _auto_sync_relative_strength(relative_store, canonical_symbol)
+                )
 
-            candles = store.get_latest(symbol, limit=lookback)
+            candles = store.get_latest(canonical_symbol, limit=lookback)
             if len(candles) < 2:
                 if sync_info.get("warning"):
                     raise HTTPException(
                         status_code=502,
                         detail=f"最新数据同步失败，且本地没有可用的K线缓存：{sync_info['warning']}",
                     )
-                raise HTTPException(status_code=404, detail="该股票暂无本地K线数据，请先同步数据后再预测。")
+                target_name = "指数" if is_index else "股票"
+                raise HTTPException(status_code=404, detail=f"该{target_name}暂无本地K线数据，请先同步数据后再预测。")
 
-            news_items = news_store.get_latest(
-                symbol,
-                limit=_news_analysis_items_limit(),
-                max_age_days=_news_analysis_lookback_days(),
-            )
             news_sync = {"attempted": False, "updated": False}
-            if not news_items and _news_auto_sync_on_predict_miss():
-                news_sync = _auto_sync_news(news_store, symbol)
+            if is_index:
+                news_items = []
+            else:
                 news_items = news_store.get_latest(
-                    symbol,
+                    canonical_symbol,
                     limit=_news_analysis_items_limit(),
                     max_age_days=_news_analysis_lookback_days(),
                 )
+                if not news_items and _news_auto_sync_on_predict_miss():
+                    news_sync = _auto_sync_news(news_store, canonical_symbol)
+                    news_items = news_store.get_latest(
+                        canonical_symbol,
+                        limit=_news_analysis_items_limit(),
+                        max_age_days=_news_analysis_lookback_days(),
+                    )
 
             predictor = _build_predictor()
-            result = predictor.predict(symbol, candles, horizon=horizon, paths=paths)
+            result = predictor.predict(canonical_symbol, candles, horizon=horizon, paths=paths)
             news_sentiment = build_news_sentiment_analysis(news_items)
             account_store.mark_prediction_succeeded(int(usage["id"]))
             fresh_user = account_store.get_user(int(user["id"]))
-            symbol_name = lookup_a_share_name(symbol)
+            symbol_name = lookup_a_share_name(canonical_symbol)
+            analysis = _build_prediction_analysis(
+                candles,
+                result,
+                horizon,
+                symbol=canonical_symbol,
+                relative_strength_store=None if is_index else relative_store,
+                news_sentiment=news_sentiment,
+            )
+            if is_index:
+                analysis["marketIndex"] = _build_market_index_analysis(candles)
+            info = instrument_info(canonical_symbol, symbol_name)
             return {
                 **result.to_dict(),
+                "symbol": canonical_symbol,
                 "symbolName": symbol_name,
+                "instrument": info.to_dict(),
+                "instrumentType": info.type,
                 "history": [candle.to_dict() for candle in candles[-120:]],
-                "analysis": _build_prediction_analysis(
-                    candles,
-                    result,
-                    horizon,
-                    symbol=symbol,
-                    relative_strength_store=relative_store,
-                    news_sentiment=news_sentiment,
-                ),
+                "analysis": analysis,
                 "lookback": len(candles),
                 "sync": {**sync_info, "relativeStrength": relative_sync, "news": news_sync},
                 "billing": {**usage, "me": public_user(fresh_user) if fresh_user is not None else None},
@@ -355,23 +373,26 @@ def create_app() -> FastAPI:
     @app.get("/api/funds/{symbol}")
     def fund_analysis(symbol: str, request: Request, auto_sync: bool = False) -> dict[str, object]:
         _require_current_user(request, account_store)
+        canonical_symbol = normalize_instrument_symbol(symbol)
+        if is_market_index_symbol(canonical_symbol):
+            raise HTTPException(status_code=400, detail="指数预测页不使用个股资金面和融资数据，请查看大盘结构分析。")
         sync_info = {"attempted": False, "updated": False}
         if auto_sync:
             sync_payload = _auto_sync_funds(fund_store)
             if isinstance(sync_payload, dict):
                 sync_info = sync_payload
-        factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
+        factors = fund_store.get_latest(canonical_symbol, limit=_fund_analysis_history_days())
         if not factors and auto_sync and not sync_info.get("attempted"):
             sync_payload = _auto_sync_funds(fund_store, force=True)
             if isinstance(sync_payload, dict):
                 sync_info = sync_payload
-            factors = fund_store.get_latest(symbol, limit=_fund_analysis_history_days())
+            factors = fund_store.get_latest(canonical_symbol, limit=_fund_analysis_history_days())
         if not factors:
             if sync_info.get("attempted") and sync_info.get("warning"):
                 raise HTTPException(status_code=502, detail=f"资金面同步失败：{sync_info['warning']}")
             raise HTTPException(status_code=404, detail="该股票暂无资金面数据，请等待每日 18:09 同步后重试。")
         return {
-            "symbol": symbol,
+            "symbol": canonical_symbol,
             "history": [factor.to_dict() for factor in factors],
             "analysis": build_fund_analysis(factors),
             "sync": sync_info,
@@ -880,6 +901,207 @@ def _build_prediction_analysis(
     }
 
 
+def _build_market_index_analysis(candles: list[Any]) -> dict[str, object]:
+    if len(candles) < 2:
+        return {
+            "available": False,
+            "score": 50,
+            "signal": "neutral",
+            "signalLabel": "大盘待确认",
+            "summary": "大盘结构样本不足，暂不做指数层修正。",
+            "detail": "上证指数K线样本不足。",
+            "components": [],
+            "metrics": {},
+        }
+
+    closes = [float(candle.close) for candle in candles]
+    highs = [float(candle.high) for candle in candles]
+    lows = [float(candle.low) for candle in candles]
+    volumes = [float(getattr(candle, "volume", 0.0) or 0.0) for candle in candles]
+    amounts = [_optional_metric(getattr(candle, "amount", None)) for candle in candles]
+    last_close = closes[-1]
+    previous_close = closes[-2]
+    ma5 = _window_average(closes, 5)
+    ma10 = _window_average(closes, 10)
+    ma20 = _window_average(closes, 20)
+    ma60 = _window_average(closes, 60)
+    return_5d = _window_return(closes, 5)
+    return_20d = _window_return(closes, 20)
+    amount_ratio5 = _series_ratio(amounts, 5)
+    amount_ratio20 = _series_ratio(amounts, 20)
+    volume_ratio5 = _series_ratio(volumes, 5)
+    recent_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+    recent_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+    close_position20 = _close_position(recent_low, recent_high, last_close)
+    volatility20 = _mean_abs_return(closes[-21:]) if len(closes) >= 21 else _mean_abs_return(closes)
+
+    components = [
+        _market_index_trend_component(last_close, previous_close, ma5, ma10, ma20, ma60),
+        _market_index_momentum_component(return_5d, return_20d),
+        _market_index_amount_component(last_close, previous_close, amount_ratio5, amount_ratio20, volume_ratio5),
+        _market_index_structure_component(close_position20, volatility20),
+    ]
+    score = int(round(sum(int(component["score"]) for component in components) / (len(components) * 25) * 100))
+    signal, signal_label = _signal_from_market_index_score(score)
+    metrics = {
+        "lastClose": last_close,
+        "previousClose": previous_close,
+        "return1d": (last_close - previous_close) / previous_close if previous_close > 0 else None,
+        "return5d": return_5d,
+        "return20d": return_20d,
+        "ma5": ma5,
+        "ma10": ma10,
+        "ma20": ma20,
+        "ma60": ma60,
+        "ma5Distance": _distance_to_average(last_close, ma5),
+        "ma20Distance": _distance_to_average(last_close, ma20),
+        "amountRatio5": amount_ratio5,
+        "amountRatio20": amount_ratio20,
+        "volumeRatio5": volume_ratio5,
+        "closePosition20": close_position20,
+        "volatility20": volatility20,
+        "latestAmount": amounts[-1],
+        "latestVolume": volumes[-1],
+    }
+    summary = _build_market_index_summary(signal_label, metrics)
+    return {
+        "available": True,
+        "score": score,
+        "signal": signal,
+        "signalLabel": signal_label,
+        "summary": summary,
+        "detail": summary,
+        "components": components,
+        "metrics": metrics,
+    }
+
+
+def _window_return(values: list[float], window: int) -> float | None:
+    if len(values) <= window or window <= 0:
+        return None
+    start = values[-window - 1]
+    end = values[-1]
+    if start <= 0:
+        return None
+    return (end - start) / start
+
+
+def _distance_to_average(value: float, average_value: float | None) -> float | None:
+    if average_value is None or average_value <= 0:
+        return None
+    return (value - average_value) / average_value
+
+
+def _market_index_trend_component(
+    last_close: float,
+    previous_close: float,
+    ma5: float | None,
+    ma10: float | None,
+    ma20: float | None,
+    ma60: float | None,
+) -> dict[str, object]:
+    averages = [value for value in (ma5, ma10, ma20, ma60) if value is not None]
+    if not averages:
+        score = 18 if last_close >= previous_close else 6
+        verdict = "指数高于前收" if last_close >= previous_close else "指数低于前收"
+        return {"label": "指数趋势位置", "score": score, "verdict": verdict, "detail": f"{verdict}。"}
+    above_count = sum(1 for value in averages if last_close >= value)
+    if above_count == len(averages):
+        score, verdict = 25, "站上可用均线"
+    elif ma5 is not None and ma20 is not None and last_close >= ma5 >= ma20:
+        score, verdict = 20, "短期均线偏强"
+    elif above_count >= max(1, len(averages) // 2):
+        score, verdict = 14, "均线结构分化"
+    elif last_close >= previous_close:
+        score, verdict = 8, "低位修复中"
+    else:
+        score, verdict = 0, "仍受均线压制"
+    return {"label": "指数趋势位置", "score": score, "verdict": verdict, "detail": f"{verdict}。"}
+
+
+def _market_index_momentum_component(return_5d: float | None, return_20d: float | None) -> dict[str, object]:
+    available = [value for value in (return_5d, return_20d) if value is not None]
+    if not available:
+        return {"label": "指数动量", "score": 12, "verdict": "样本不足", "detail": "5日和20日指数动量样本不足。"}
+    positive = sum(1 for value in available if value > 0)
+    if positive == len(available):
+        score, verdict = 25 if len(available) >= 2 else 18, "多周期回升"
+    elif return_5d is not None and return_5d > 0:
+        score, verdict = 16, "短线回暖"
+    elif all(value < 0 for value in available):
+        score, verdict = 0 if len(available) >= 2 else 6, "多周期走弱"
+    else:
+        score, verdict = 10, "动量分化"
+    return {"label": "指数动量", "score": score, "verdict": verdict, "detail": f"{verdict}。"}
+
+
+def _market_index_amount_component(
+    last_close: float,
+    previous_close: float,
+    amount_ratio5: float | None,
+    amount_ratio20: float | None,
+    volume_ratio5: float | None,
+) -> dict[str, object]:
+    reference = amount_ratio5 if amount_ratio5 is not None else amount_ratio20
+    if reference is None and volume_ratio5 is None:
+        return {"label": "成交额确认", "score": 12, "verdict": "量能样本不足", "detail": "指数成交额和成交量样本不足。"}
+    ratio = reference if reference is not None else volume_ratio5
+    rising = last_close >= previous_close
+    if ratio is not None and ratio >= 1.12 and rising:
+        score, verdict = 25, "放量上行"
+    elif ratio is not None and ratio >= 1.0 and rising:
+        score, verdict = 18, "量价配合"
+    elif ratio is not None and ratio < 0.85 and not rising:
+        score, verdict = 0, "缩量下行"
+    elif not rising:
+        score, verdict = 6, "量价偏弱"
+    else:
+        score, verdict = 12, "成交基本均衡"
+    return {"label": "成交额确认", "score": score, "verdict": verdict, "detail": f"{verdict}。"}
+
+
+def _market_index_structure_component(close_position20: float, volatility20: float) -> dict[str, object]:
+    if close_position20 >= 0.72 and volatility20 <= 0.018:
+        score, verdict = 25, "收盘靠近区间上沿且波动可控"
+    elif close_position20 >= 0.58:
+        score, verdict = 18, "收盘位于区间偏强位置"
+    elif close_position20 >= 0.38:
+        score, verdict = 12, "收盘仍在震荡中段"
+    elif close_position20 >= 0.22:
+        score, verdict = 6, "收盘靠近区间下沿"
+    else:
+        score, verdict = 0, "收盘接近近期低位"
+    return {"label": "区间与波动", "score": score, "verdict": verdict, "detail": f"{verdict}。"}
+
+
+def _signal_from_market_index_score(score: int) -> tuple[str, str]:
+    if score >= 65:
+        return "bullish", "大盘偏强"
+    if score <= 35:
+        return "bearish", "大盘偏弱"
+    return "neutral", "大盘震荡"
+
+
+def _build_market_index_summary(signal_label: str, metrics: dict[str, object]) -> str:
+    return_5d = metrics.get("return5d")
+    return_20d = metrics.get("return20d")
+    ma20_distance = metrics.get("ma20Distance")
+    amount_ratio = metrics.get("amountRatio5") or metrics.get("amountRatio20")
+    close_position = metrics.get("closePosition20")
+    parts = [f"大盘结构：{signal_label}"]
+    if isinstance(return_5d, (int, float)):
+        parts.append(f"近5日涨跌幅{return_5d * 100:+.2f}%")
+    if isinstance(return_20d, (int, float)):
+        parts.append(f"近20日涨跌幅{return_20d * 100:+.2f}%")
+    if isinstance(ma20_distance, (int, float)):
+        parts.append(f"相对20日均线{ma20_distance * 100:+.2f}%")
+    if isinstance(amount_ratio, (int, float)):
+        parts.append(f"成交额约为均值的{amount_ratio:.2f}倍")
+    if isinstance(close_position, (int, float)):
+        parts.append(f"收盘位于近20日区间{close_position * 100:.0f}%位置")
+    return "；".join(parts) + "。"
+
+
 def _build_price_volume_confirmation(candles: list) -> dict[str, object]:
     last_candle = candles[-1]
     last_open = float(last_candle.open)
@@ -1270,6 +1492,8 @@ def _auto_sync_symbol(store: CandleStore, symbol: str) -> dict[str, object]:
 
 
 def _auto_sync_relative_strength(store: RelativeStrengthStore, symbol: str) -> dict[str, object]:
+    if is_market_index_symbol(symbol):
+        return {"attempted": False, "updated": False, "skipped": True, "reason": "market_index"}
     service = RelativeStrengthSyncService(store=store)
     try:
         result = service.sync_symbol(symbol)
@@ -1321,6 +1545,8 @@ def _auto_sync_funds(store: FundFactorStore, force: bool = False) -> dict[str, o
 
 
 def _auto_sync_news(store: StockNewsStore, symbol: str, force: bool = False) -> dict[str, object]:
+    if is_market_index_symbol(symbol):
+        return {"attempted": False, "updated": False, "skipped": True, "reason": "market_index"}
     last_updated_at = store.get_symbol_last_updated_at(symbol)
     if not force and last_updated_at:
         normalized = last_updated_at[:-1] + "+00:00" if last_updated_at.endswith("Z") else last_updated_at

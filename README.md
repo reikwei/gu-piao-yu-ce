@@ -5,6 +5,8 @@
 ## 当前能力
 
 - 支持 A 股单只股票预测，也支持按全市场范围同步日线数据，内置 AkShare、BaoStock、TuShare 多源 fallback。
+- 首页默认预测 A股上证指数（`sh000001`）；用户仍可输入单只股票代码查看股票预测页。
+- 上证指数预测页是独立大盘视图，会展示指数趋势、成交额、区间位置和波动风险，不套用个股资金面、融资余额或行业映射。
 - 北交所日线同步会优先走 AkShare 的新浪日线源，避免把 TuShare `daily` 权限当成默认前提。
 - 使用 SQLite 缓存历史 K 线，避免每次预测都实时抓网。
 - 通过 Kronos 官方接口适配多路径预测输出。
@@ -15,7 +17,7 @@
 - 预测详情已接入消息面缓存，支持按股票读取最近新闻并给出情绪分层，参与综合结论裁决。
 - 页面支持访问密码保护；输入正确密码后，先进入股票输入首页，再进入单股票详情页。
 - 后端支持可配置 CORS，适合“CF 静态页 + 独立 API 域名 + 美国 VPS”部署。
-- GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并把 `data/candles.db` 上传到 VPS。
+- GitHub Actions 可在北京时间收盘后自动同步全市场 A 股 K 线，并在合并后把上证指数 `sh000001` 写入同一个 `data/candles.db` 再上传到 VPS。
 - GitHub Actions 还可独立同步相对强弱缓存，并把 `data/relative_strength.db` 上传到 VPS。
 - GitHub Actions 还可独立在北京时间每周日 21:09 运行一次行业修复任务，专门补 `data/relative_strength.db` 里的行业映射和行业 K 线缓存。
 - GitHub Actions 还可独立在北京时间 18:09 同步资金面快照，写入独立 SQLite 缓存。
@@ -70,9 +72,10 @@ Copy-Item .env.example .env
 
 - APP_ACCESS_PASSWORD
 
-4. 先同步一只股票的历史数据。
+4. 先同步默认大盘指数或一只股票的历史数据。
 
 ```powershell
+python -m kronos_mvp.cli sync sh000001
 python -m kronos_mvp.cli sync 600519
 ```
 
@@ -98,7 +101,7 @@ python -m kronos_mvp.cli sync 600835 --full-refresh
 
 全市场同步现在还会默认写入进度文件，长任务如果中断，再次执行同样的 `sync --all` 会自动从未完成队列继续；单只股票临时失败会按 `--max-retries` 做重试。需要从头重建队列时，可以显式加上 `--reset-progress`。
 
-GitHub Actions 的 `Update A-share K-line Data` 工作流现在也支持手动 `workflow_dispatch` 时把 `full_refresh` 设为 `true`，用于全量回填 K 线字段。注意这只能修复 `candles.db` 里的历史字段缺口；相对强弱行业映射和行业 K 线仍由独立的 `update-relative-strength-data.yml` 维护，不会随着 K 线工作流自动补齐。`full_refresh` 现在会在写库前校验 provider 返回历史是否覆盖现有缓存的最早日期；如果返回的是更晚起始的部分历史，同步会直接报错并保留原缓存，避免把不完整结果误当成成功的全量刷新。
+GitHub Actions 的 `Update A-share K-line Data` 工作流现在也支持手动 `workflow_dispatch` 时把 `full_refresh` 设为 `true`，用于全量回填 K 线字段。注意这只能修复 `candles.db` 里的历史字段缺口；相对强弱行业映射和行业 K 线仍由独立的 `update-relative-strength-data.yml` 维护，不会随着 K 线工作流自动补齐。全市场分片合并完成后，工作流会额外执行 `python -m kronos_mvp.cli sync sh000001`，因此上传到 VPS 的主 K 线库会包含默认大盘预测所需的上证指数日线。`full_refresh` 现在会在写库前校验 provider 返回历史是否覆盖现有缓存的最早日期；如果返回的是更晚起始的部分历史，同步会直接报错并保留原缓存，避免把不完整结果误当成成功的全量刷新。
 
 如果要手动只跑某个交易所分片，可以使用：
 
@@ -114,9 +117,9 @@ python -m kronos_mvp.cli sync --all --market bj
 powershell -ExecutionPolicy Bypass -File scripts/run_local_api.ps1
 ```
 
-6. 打开 http://127.0.0.1:8000；如果配置了 `APP_ACCESS_PASSWORD`，先输入访问密码，再输入股票代码并点击“开始预测”。
+6. 打开 http://127.0.0.1:8000；如果配置了 `APP_ACCESS_PASSWORD`，先输入访问密码。首页默认标的是 A股上证指数，直接点击“开始预测”即可查看大盘预测；也可以改填单只股票代码。
 
-当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页只负责输入股票代码；点击“开始预测”后才进入详情页。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。网页预测默认直接读取本地 SQLite 缓存，避免把页面请求绑在实时抓数上；生产数据刷新依赖每日 GitHub Actions，同步失败时不会拖垮前端预测请求。
+当前页面默认使用 12 条采样路径，对未来 7 个交易日做概率分析，不再在网页上手动修改路径数。首页默认预测 `sh000001` 上证指数，也支持输入股票代码；点击“开始预测”后才进入详情页。指数详情页会显示大盘结构分析和大盘综合判断，股票详情页会继续展示个股资金面、消息面、价量确认和相对强弱。详情页顶部提供“返回首页”，并直接展示上涨概率、波动放大概率、终点区间和代表情景。网页预测默认直接读取本地 SQLite 缓存，避免把页面请求绑在实时抓数上；生产数据刷新依赖每日 GitHub Actions，同步失败时不会拖垮前端预测请求。
 
 API 侧现在会在进程内复用同一组 Kronos 模型实例，避免每次预测都重新加载模型；同时 `/api/predict/{symbol}` 默认启用账户级频率限制，环境变量 `PREDICT_RATE_LIMIT_REQUESTS` 与 `PREDICT_RATE_LIMIT_WINDOW_SECONDS` 可调整每个账户在窗口期内的预测次数上限。账号登录入口统一为 `/api/auth/login`；旧的 `/auth/login` 已停用，管理员也应使用同一入口登录，只是默认用户名仍是 `admin`。如果部署在 Nginx 反代后，建议把 `KRONOS_PREWARM_ON_STARTUP=1` 打开，让服务在启动阶段完成模型冷加载；反代层也应把 `proxy_read_timeout`/`proxy_send_timeout` 调到至少 180 秒，避免第一次预测或长路径预测在 60 秒默认超时下被提前截断。
 
@@ -188,7 +191,9 @@ python -m kronos_mvp.cli --news-db data/news_sentiment.db sync-news --all --limi
 - 定时任务会按 `market/prefixes` 分片并行执行“全市场增量同步”（`sync-news --all --refresh-hours 12`），再自动合并成 `data/news_sentiment.db` 上传 VPS。
 - 可在 workflow_dispatch 手动填写 `symbols` 和 `limit`，仅同步指定股票。
 
-详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。若最新交易日缺少融资明细，融资 3 日趋势会自动回退到最近 3 个可用融资样本，并在文案中明确标注。综合结论区会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决；若行业侧样本尚未补齐，会明确提示当前仅完成大盘基准比较。价量确认层除了成交量，还会结合成交额归一化和换手率判断放量是否真实成立。
+股票详情页顶部的“资金面分析”按钮会读取 `data/fund_factors.db`，展示最新交易日数据和多日趋势指标，包括：资金净额、资金净流入占比、3 日/5 日/10 日累计主力净流入、连续净流入天数、融资余额 3 日斜率与加速度，以及“单日异动 / 持续趋势”的资金结论区分。若最新交易日缺少融资明细，融资 3 日趋势会自动回退到最近 3 个可用融资样本，并在文案中明确标注。综合结论区会叠加 `data/relative_strength.db` 中的“相对强弱层”，用个股相对指数和所属行业的超额表现参与冲突裁决；若行业侧样本尚未补齐，会明确提示当前仅完成大盘基准比较。价量确认层除了成交量，还会结合成交额归一化和换手率判断放量是否真实成立。
+
+指数预测页不会调用 `/api/funds/{symbol}`，也不会展示个股主力净流入、融资余额、融资买入额或所属行业相对强弱。上证指数页改用指数自身的均线位置、近 5/20 日涨跌幅、成交额倍数、近 20 日区间位置和波动率生成“大盘结构分析”，再与 Kronos 主模型和价量确认层合成大盘综合判断。
 
 ## 运行测试
 

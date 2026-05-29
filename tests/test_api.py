@@ -195,6 +195,11 @@ class ApiTests(unittest.TestCase):
         self.assertIn("进入账户中心", response.text)
         self.assertIn("home-predict-overlay", response.text)
         self.assertIn("正在生成预测分析", response.text)
+        self.assertIn("预测标的", response.text)
+        self.assertIn("value='sh000001'", response.text)
+        self.assertIn("A股上证指数", response.text)
+        self.assertIn("大盘结构分析", response.text)
+        self.assertIn("指数预测页", response.text)
         self.assertIn("id='home-data-freshness'", response.text)
         self.assertIn("最新数据更新时间：读取中...", response.text)
         self.assertIn("/api/data-freshness", response.text)
@@ -509,6 +514,40 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["billing"]["chargeType"], "free_credit")
         self.assertEqual(response.json()["billing"]["me"]["freeCreditsRemaining"], 9)
 
+    def test_predict_market_index_returns_index_profile(self):
+        store = FakeStore(candles=_sample_price_volume_confirmed_candles())
+        predictor = Mock()
+        predictor.predict.return_value = PredictionResult(
+            symbol="sh000001",
+            backend="kronos",
+            paths=[
+                ForecastPath(
+                    name="kronos_path_1",
+                    points=[PredictionPoint(date=date(2026, 5, 26), open=11.4, high=11.8, low=11.2, close=11.7)],
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False), patch(
+            "kronos_mvp.api.CandleStore", return_value=store
+        ), patch("kronos_mvp.api.KronosPredictor", return_value=predictor):
+            client = TestClient(create_app())
+            _register(client)
+            response = client.get("/api/predict/sh000001?horizon=1&paths=3&auto_sync=false")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["symbol"], "sh000001")
+        self.assertEqual(payload["symbolName"], "上证指数")
+        self.assertEqual(payload["instrumentType"], "market_index")
+        self.assertEqual(payload["instrument"]["label"], "A股上证指数")
+        self.assertTrue(payload["analysis"]["marketIndex"]["available"])
+        self.assertIn("大盘", payload["analysis"]["marketIndex"]["signalLabel"])
+        self.assertFalse(payload["analysis"]["relativeStrength"]["available"])
+        self.assertEqual(payload["sync"]["news"], {"attempted": False, "updated": False})
+        predictor.predict.assert_called_once()
+        self.assertEqual(predictor.predict.call_args.args[0], "sh000001")
+
     def test_predict_surfaces_news_warning_when_provider_returns_empty(self):
         store = FakeStore()
         predictor = Mock()
@@ -717,6 +756,15 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["analysis"]["flowMetrics"]["consecutiveInflowDays"], 10)
         self.assertAlmostEqual(payload["analysis"]["flowMetrics"]["netInflow10d"], 847000000.0)
         self.assertEqual(len(payload["history"]), 10)
+
+    def test_fund_analysis_endpoint_rejects_market_index(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, _test_env(tmp), clear=False):
+            client = TestClient(create_app())
+            _register(client)
+            response = client.get("/api/funds/sh000001")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("指数预测页不使用个股资金面", response.json()["detail"])
 
     def test_fund_analysis_endpoint_auto_syncs_when_requested(self):
         fund_store = FakeFundStore(factors=[])

@@ -26,6 +26,24 @@ class DataSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.rows, 1)
             self.assertEqual(store.get_latest("600519", limit=1)[0].close, 1.8)
 
+    def test_sync_accepts_market_index_alias(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CandleStore(Path(tmp) / "candles.db")
+            service = DataSyncService(
+                store=store,
+                providers=[
+                    MemoryProvider(
+                        "working",
+                        candles=[Candle(date=date(2026, 5, 23), open=3200, high=3230, low=3190, close=3220, volume=1000, amount=2000)],
+                    )
+                ],
+            )
+
+            result = service.sync_symbol("上证指数")
+
+            self.assertEqual(result.symbol, "sh000001")
+            self.assertEqual(store.get_latest("sh000001", limit=1)[0].close, 3220)
+
     def test_sync_raises_clear_error_when_all_providers_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = CandleStore(Path(tmp) / "candles.db")

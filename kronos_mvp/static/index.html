@@ -1132,7 +1132,7 @@
       <section class='view centered' id='home-view' hidden>
         <div class='card entry-card'>
           <h1 id='site-title'>土豆A股预测研究</h1>
-          <p id='subtitle'>输入股票代码，生成未来 7 个交易日的上涨概率、波动风险和代表情景。</p>
+          <p id='subtitle'>默认预测 A股上证指数，也可以输入单只股票代码生成未来 7 个交易日的上涨概率、波动风险和代表情景。</p>
           <div class='entry-note' id='account-note'>内部采样 12 条路径，仅输出研究结论，不展示全部原始路径。</div>
           <div class='home-interaction-shell'>
             <div class='button-row home-account-actions'>
@@ -1140,18 +1140,18 @@
               <button class='secondary-button' id='admin-button' type='button' hidden>管理后台</button>
             </div>
             <div class='input-stack'>
-              <label>股票代码
-                <input id='symbol-input' value='600519' inputmode='numeric' autocomplete='off' placeholder='例如 600519'>
+              <label>预测标的
+                <input id='symbol-input' value='sh000001' inputmode='text' autocomplete='off' placeholder='上证指数 / sh000001 / 600519'>
               </label>
               <button class='primary-button' id='predict-button' type='button'>开始预测</button>
             </div>
-            <div class='status-text' id='home-status'>输入股票代码后点击预测。</div>
+            <div class='status-text' id='home-status'>默认预测 A股上证指数，点击预测即可查看大盘预测。</div>
             <div class='home-data-freshness' id='home-data-freshness'>最新数据更新时间：读取中...</div>
             <div class='home-predict-overlay' id='home-predict-overlay' hidden>
               <div class='home-predict-overlay-card'>
                 <div class='home-predict-overlay-emoji' id='home-predict-overlay-emoji'>⏳</div>
                 <div class='home-predict-overlay-title' id='home-predict-overlay-title'>正在生成预测分析</div>
-                <p class='home-predict-overlay-body' id='home-predict-overlay-body'>正在为 600519 生成未来 7 个交易日的预测分析</p>
+                <p class='home-predict-overlay-body' id='home-predict-overlay-body'>正在为 A股上证指数 生成未来 7 个交易日的预测分析</p>
                 <p class='home-predict-overlay-hint' id='home-predict-overlay-hint'>请稍后...</p>
               </div>
             </div>
@@ -1340,7 +1340,7 @@
                   <span class='scenario-title'>等待预测</span>
                   <span class='scenario-value'>--</span>
                 </header>
-                <p>先回到首页输入股票代码，再查看代表情景。</p>
+                <p>先回到首页选择指数或输入股票代码，再查看代表情景。</p>
               </div>
             </div>
           </article>
@@ -1493,6 +1493,7 @@
     const runtimeConfig = window.KRONOS_CONFIG || {};
     const DEFAULT_HORIZON = 7;
     const DEFAULT_PATHS = 12;
+    const DEFAULT_MARKET_INDEX_SYMBOL = 'sh000001';
     const QUERY_PRICE_CENTS = 20;
     const chart = echarts.init(document.getElementById('chart'));
     const views = {
@@ -1543,13 +1544,43 @@
     let currentPredictionData = null;
     let currentPredictionAnalysis = null;
     let currentFundAnalysis = null;
+    const STOCK_FUND_METRIC_LABELS = {
+      'fund-net-inflow-value': '资金净额',
+      'fund-net-ratio-value': '资金净流入占比',
+      'fund-margin-balance-value': '融资余额',
+      'fund-margin-buy-value': '融资买入额',
+      'fund-updated-at-value': '数据更新时间',
+      'fund-history-days-value': '样本交易日数',
+      'fund-net-inflow-3d-value': '3日累计主力净流入',
+      'fund-net-inflow-5d-value': '5日累计主力净流入',
+      'fund-net-inflow-10d-value': '10日累计主力净流入',
+      'fund-consecutive-inflow-value': '连续净流入天数',
+      'fund-margin-slope-3d-value': '融资余额3日斜率',
+      'fund-margin-acceleration-3d-value': '融资余额3日加速度',
+      'fund-trend-profile-value': '结论类型',
+    };
+    const MARKET_INDEX_METRIC_LABELS = {
+      'fund-net-inflow-value': '最新点位',
+      'fund-net-ratio-value': '近5日涨跌幅',
+      'fund-margin-balance-value': '近20日涨跌幅',
+      'fund-margin-buy-value': '20日均线偏离',
+      'fund-updated-at-value': '5日成交额倍数',
+      'fund-history-days-value': '20日成交额倍数',
+      'fund-net-inflow-3d-value': '5日成交量倍数',
+      'fund-net-inflow-5d-value': '近20日区间位置',
+      'fund-net-inflow-10d-value': '20日平均波动',
+      'fund-consecutive-inflow-value': '最新成交额',
+      'fund-margin-slope-3d-value': '最新成交量',
+      'fund-margin-acceleration-3d-value': '指数结构评分',
+      'fund-trend-profile-value': '结论类型',
+    };
 
     document.title = runtimeConfig.siteTitle || '土豆A股预测研究';
     document.getElementById('site-title').textContent = document.title;
 
     document.getElementById('back-home').addEventListener('click', () => {
       showView('home');
-      homeStatusEl.textContent = '已返回首页，输入新的股票代码即可重新预测。';
+      homeStatusEl.textContent = '已返回首页，选择指数或输入股票代码即可重新预测。';
       void loadLatestDataFreshness();
     });
     reloadFundButton.addEventListener('click', () => loadFundAnalysis({ autoSync: true, scrollIntoView: true }));
@@ -1596,7 +1627,7 @@
     });
     document.getElementById('account-center-back').addEventListener('click', () => {
       showView('home');
-      homeStatusEl.textContent = '已返回首页，输入股票代码即可继续预测。';
+      homeStatusEl.textContent = '已返回首页，选择指数或输入股票代码即可继续预测。';
       void loadLatestDataFreshness();
     });
     document.getElementById('logout-button').addEventListener('click', logout);
@@ -1666,7 +1697,7 @@
         renderAccountState();
         authStatusEl.textContent = '登录成功。';
         showView('home');
-        homeStatusEl.textContent = '请输入股票代码后点击预测。';
+        homeStatusEl.textContent = '默认预测 A股上证指数，也可以输入股票代码后点击预测。';
         void loadLatestDataFreshness();
       } catch (error) {
         authStatusEl.textContent = error.message || '登录失败';
@@ -2005,17 +2036,59 @@
       }
     }
 
+    function normalizeInputSymbol(value) {
+      const text = String(value || '').trim();
+      const compact = text.replace(/[\s_-]/g, '').toLowerCase();
+      if (!compact || ['上证', '上证指数', '上证综指', '沪指', '大盘', 'a股大盘', 'a股上证指数', 'sh000001', 'sh.000001', '000001.sh'].includes(compact)) {
+        return DEFAULT_MARKET_INDEX_SYMBOL;
+      }
+      return text;
+    }
+
+    function displaySymbolLabel(symbol) {
+      return isMarketIndexSymbolValue(symbol) ? 'A股上证指数' : symbol;
+    }
+
+    function isMarketIndexSymbolValue(symbol) {
+      const compact = String(symbol || '').replace(/[\s_-]/g, '').toLowerCase();
+      return compact === DEFAULT_MARKET_INDEX_SYMBOL || compact === 'sh.000001' || compact === '000001.sh';
+    }
+
+    function isMarketIndexData(data) {
+      if (!data) {
+        return false;
+      }
+      if (data.instrumentType === 'market_index') {
+        return true;
+      }
+      return data.instrument && data.instrument.type === 'market_index';
+    }
+
+    function getInstrumentDisplayName(data) {
+      const instrument = data && data.instrument ? data.instrument : null;
+      if (instrument && instrument.label) {
+        return instrument.label;
+      }
+      if (data && data.symbolName) {
+        return `${data.symbol} ${data.symbolName}`;
+      }
+      return data && data.symbol ? data.symbol : '--';
+    }
+
     async function requestPrediction(symbol) {
-      if (!symbol) {
-        homeStatusEl.textContent = '请先输入股票代码。';
+      const normalizedSymbol = normalizeInputSymbol(symbol);
+      if (!normalizedSymbol) {
+        homeStatusEl.textContent = '请先输入预测标的。';
         return;
       }
+      symbolInput.value = normalizedSymbol;
+      const displayLabel = displaySymbolLabel(normalizedSymbol);
 
-      homeStatusEl.textContent = `正在为 ${symbol} 生成未来 ${DEFAULT_HORIZON} 个交易日的预测分析...`;
-      showHomePredictOverlay(buildPredictOverlayState(symbol));
+      homeStatusEl.textContent = `正在为 ${displayLabel} 生成未来 ${DEFAULT_HORIZON} 个交易日的预测分析...`;
+      showHomePredictOverlay(buildPredictOverlayState(displayLabel));
       setDetailBusy(true);
       try {
-        const data = await fetchJson(buildApiUrl(`/api/predict/${symbol}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`), {
+        const data = await fetchJson(buildApiUrl(`/api/predict/${encodeURIComponent(normalizedSymbol)}?horizon=${DEFAULT_HORIZON}&paths=${DEFAULT_PATHS}&auto_sync=false`), {
           timeoutMs: PREDICT_TIMEOUT_MS,
         });
         if (data.billing && data.billing.me) {
@@ -2031,9 +2104,14 @@
         hideHomePredictOverlay();
         showView('detail');
         renderDetail(data, analysis, envelope);
-        renderFundAnalysisPlaceholder(data.symbol);
-        renderCombinedConclusion(analysis, null);
-        void loadFundAnalysis({ autoSync: false });
+        if (isMarketIndexData(data)) {
+          renderMarketIndexAnalysisPanel(data, analysis);
+          renderMarketIndexCombinedConclusion(data, analysis);
+        } else {
+          renderFundAnalysisPlaceholder(data.symbol);
+          renderCombinedConclusion(analysis, null);
+          void loadFundAnalysis({ autoSync: false });
+        }
       } catch (error) {
         if (error && error.authRequired) {
           resetPredictFailureState();
@@ -2064,8 +2142,9 @@
     }
 
     function renderDetail(data, analysis, envelope) {
-      const symbolLabel = data.symbolName ? `${data.symbol} ${data.symbolName}` : data.symbol;
-      document.getElementById('detail-title').textContent = `${symbolLabel} 概率预测详情`;
+      const isIndex = isMarketIndexData(data);
+      const symbolLabel = getInstrumentDisplayName(data);
+      document.getElementById('detail-title').textContent = isIndex ? `${symbolLabel} 大盘预测详情` : `${symbolLabel} 概率预测详情`;
       detailStatusEl.textContent = buildPredictionStatus(data, analysis);
 
       renderSignal(analysis);
@@ -2080,12 +2159,12 @@
       document.getElementById('meta-range').textContent = `${formatPrice(analysis.projectedCloseLow)} - ${formatPrice(analysis.projectedCloseHigh)}`;
 
       document.getElementById('analysis-summary').textContent = buildNarrative(data, analysis);
-      renderScenarioList(envelope.scenarios, analysis.lastClose);
+      renderScenarioList(envelope.scenarios, analysis.lastClose, isIndex);
       renderChart(data, analysis, envelope);
     }
 
     async function loadFundAnalysis(options = {}) {
-      if (!currentPredictionData) {
+      if (!currentPredictionData || isMarketIndexData(currentPredictionData)) {
         return;
       }
       const { scrollIntoView = false, autoSync = false } = options;
@@ -2129,6 +2208,8 @@
     }
 
     function renderFundAnalysisPlaceholder(symbol) {
+      reloadFundButton.hidden = false;
+      applyMetricLabels(STOCK_FUND_METRIC_LABELS);
       renderFundViewHeader(symbol, currentPredictionAnalysis);
       document.getElementById('fund-analysis-summary').textContent = `${symbol} 的资金面分析正在准备中。预测完成后，会在这里自动展示最近半个月的主力资金累计流向、融资趋势与评分。`;
       setFundScoreBadge('neutral', '等待加载');
@@ -2151,6 +2232,8 @@
     }
 
     function renderFundAnalysis(analysis) {
+      reloadFundButton.hidden = false;
+      applyMetricLabels(STOCK_FUND_METRIC_LABELS);
       const latest = analysis.latest || {};
       const latestAvailableMarginRecord = getLatestAvailableMarginRecord(analysis);
       const flowMetrics = analysis.flowMetrics || {};
@@ -2184,6 +2267,8 @@
     }
 
     function renderFundAnalysisUnavailable(message) {
+      reloadFundButton.hidden = false;
+      applyMetricLabels(STOCK_FUND_METRIC_LABELS);
       renderFundViewHeader(currentPredictionData ? currentPredictionData.symbol : '--', currentPredictionAnalysis, null, message);
       setFundScoreBadge('neutral', '暂不可用');
       document.getElementById('fund-analysis-summary').textContent = '资金面分析暂不可用。';
@@ -2262,6 +2347,47 @@
       fundStatusEl.textContent = `${safeSymbol} / Kronos ${kronosAnalysis ? kronosAnalysis.signalLabel || '震荡' : '--'} / 正在展示半个月资金流向、融资趋势与综合结论`;
     }
 
+    function renderMarketIndexAnalysisPanel(data, analysis) {
+      const label = getInstrumentDisplayName(data);
+      const marketIndex = analysis.marketIndex || {};
+      const metrics = marketIndex.metrics || {};
+      reloadFundButton.hidden = true;
+      applyMetricLabels(MARKET_INDEX_METRIC_LABELS);
+      fundTitleEl.textContent = `${label} 大盘结构分析`;
+      fundStatusEl.textContent = `${label} / 指数预测页 / 不展示个股资金净额、融资余额和行业映射`;
+      setFundScoreBadge(marketIndex.signal || 'neutral', `${marketIndex.signalLabel || '大盘震荡'} ${marketIndex.score || 50}/100`);
+      document.getElementById('fund-analysis-summary').textContent = marketIndex.summary || '大盘结构样本正在整理中。';
+      document.getElementById('fund-net-inflow-value').textContent = formatPrice(metrics.lastClose);
+      document.getElementById('fund-net-ratio-value').textContent = formatSignedPercent(metrics.return5d);
+      document.getElementById('fund-margin-balance-value').textContent = formatSignedPercent(metrics.return20d);
+      document.getElementById('fund-margin-buy-value').textContent = formatSignedPercent(metrics.ma20Distance);
+      document.getElementById('fund-updated-at-value').textContent = formatRatio(metrics.amountRatio5);
+      document.getElementById('fund-history-days-value').textContent = formatRatio(metrics.amountRatio20);
+      document.getElementById('fund-net-inflow-3d-value').textContent = formatRatio(metrics.volumeRatio5);
+      document.getElementById('fund-net-inflow-5d-value').textContent = formatPercent(metrics.closePosition20);
+      document.getElementById('fund-net-inflow-10d-value').textContent = formatPercent(metrics.volatility20);
+      document.getElementById('fund-consecutive-inflow-value').textContent = formatMoney(metrics.latestAmount);
+      document.getElementById('fund-margin-slope-3d-value').textContent = compactNumber(metrics.latestVolume);
+      document.getElementById('fund-margin-acceleration-3d-value').textContent = `${marketIndex.score || 50}/100`;
+      document.getElementById('fund-trend-profile-value').textContent = marketIndex.signalLabel || '大盘震荡';
+      setFundMarginNote('指数没有单只股票的主力净流入、融资余额、融资买入额和行业映射；这里改用指数趋势、成交额、区间位置和波动风险做大盘结构判断。');
+      document.getElementById('fund-analysis-status').textContent = `${label} 指数预测页已切换为大盘专用分析，不调用个股资金面接口。`;
+      document.getElementById('fund-component-list').innerHTML = (marketIndex.components || []).map(component => {
+        const scoreText = `${component.score || 0}/25`;
+        return `<div class='scenario-row neutral'><header><span class='scenario-title'>${escapeHtml(component.label || '大盘因子')}</span><span class='scenario-value'>${escapeHtml(scoreText)}</span></header><p>${escapeHtml(component.detail || `${component.verdict || '待确认'}。`)}</p></div>`;
+      }).join('') || `<div class='scenario-row neutral'><header><span class='scenario-title'>暂无评分</span><span class='scenario-value'>--</span></header><p>当前没有可展示的大盘结构解释。</p></div>`;
+    }
+
+    function applyMetricLabels(labels) {
+      Object.entries(labels).forEach(([valueId, label]) => {
+        const valueNode = document.getElementById(valueId);
+        const labelNode = valueNode ? valueNode.previousElementSibling : null;
+        if (labelNode) {
+          labelNode.textContent = label;
+        }
+      });
+    }
+
     function renderCombinedConclusion(kronosAnalysis, fundAnalysis, fundError = '') {
       const list = document.getElementById('combined-conclusion-list');
       const priceVolume = kronosAnalysis && kronosAnalysis.priceVolumeConfirmation ? kronosAnalysis.priceVolumeConfirmation : null;
@@ -2323,6 +2449,87 @@
         return '等待指数、行业映射和行业K线同步后展示相对强弱。';
       }
       return analysis.detail || `相对强弱 ${analysis.signalLabel || '待同步'}，评分 ${analysis.score || 50}/100。`;
+    }
+
+    function renderMarketIndexCombinedConclusion(data, analysis) {
+      const list = document.getElementById('combined-conclusion-list');
+      const label = getInstrumentDisplayName(data);
+      const marketIndex = analysis.marketIndex || null;
+      const priceVolume = analysis.priceVolumeConfirmation || null;
+      const verdict = buildMarketIndexVerdict(analysis, marketIndex, priceVolume);
+      document.getElementById('combined-summary').textContent = `${label} 指数页当前综合 Kronos 主模型、大盘结构层和价量确认层，裁决分 ${verdict.score}/100，结论 ${verdict.label}。`;
+      list.innerHTML = [
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>Kronos 主模型</span><span class='scenario-value'>${escapeHtml(analysis.signalLabel || '震荡')}</span></header><p>${escapeHtml(buildKronosSummary(analysis))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>大盘结构层</span><span class='scenario-value'>${escapeHtml(marketIndex ? `${marketIndex.signalLabel || '大盘震荡'} ${marketIndex.score || 50}/100` : '未加载')}</span></header><p>${escapeHtml(buildMarketIndexStructureSummary(marketIndex))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>价量确认层</span><span class='scenario-value'>${escapeHtml(priceVolume ? `${priceVolume.signalLabel || '价量中性'} ${priceVolume.score || 50}/100` : '未加载')}</span></header><p>${escapeHtml(buildPriceVolumeSummary(priceVolume))}</p></div>`,
+        `<div class='scenario-row neutral'><header><span class='scenario-title'>波动风险层</span><span class='scenario-value'>${escapeHtml(formatPercent(marketIndex && marketIndex.metrics ? marketIndex.metrics.volatility20 : null))}</span></header><p>${escapeHtml(buildMarketIndexRiskSummary(marketIndex))}</p></div>`,
+        `<div class='scenario-row ${verdict.tone}'><header><span class='scenario-title'>大盘综合判断</span><span class='scenario-value'>${escapeHtml(`${verdict.label} ${verdict.score}/100`)}</span></header><p>${escapeHtml(verdict.detail)}</p></div>`,
+      ].join('');
+    }
+
+    function buildMarketIndexVerdict(kronosAnalysis, marketIndex, priceVolume) {
+      const contributors = [];
+      if (kronosAnalysis) {
+        contributors.push({
+          bias: signalBias(kronosAnalysis.signal),
+          strength: Math.max(0.18, Math.min(1, Number(kronosAnalysis.confidence || 0))),
+          weight: 0.5,
+        });
+      }
+      if (marketIndex) {
+        contributors.push({
+          bias: signalBias(marketIndex.signal),
+          strength: Math.max(0.1, Math.min(1, Math.abs((Number(marketIndex.score || 50) - 50) / 50))),
+          weight: 0.32,
+        });
+      }
+      if (priceVolume) {
+        contributors.push({
+          bias: signalBias(priceVolume.signal),
+          strength: Math.max(0.1, Math.min(1, Math.abs((Number(priceVolume.score || 50) - 50) / 50))),
+          weight: 0.18,
+        });
+      }
+      const totalWeight = contributors.reduce((sum, item) => sum + item.weight, 0) || 1;
+      const netBias = contributors.reduce((sum, item) => sum + item.bias * item.strength * item.weight, 0) / totalWeight;
+      const score = Math.round(Math.max(0, Math.min(100, 50 + netBias * 50)));
+      let label = '谨慎';
+      let tone = 'neutral';
+      if (score >= 70) {
+        label = '偏强';
+        tone = 'bullish';
+      } else if (score >= 58) {
+        label = '偏多';
+        tone = 'bullish';
+      } else if (score <= 30) {
+        label = '偏弱';
+        tone = 'bearish';
+      } else if (score <= 42) {
+        label = '偏空';
+        tone = 'bearish';
+      }
+      return {
+        score,
+        label,
+        tone,
+        detail: `${buildKronosSummary(kronosAnalysis)} ${buildMarketIndexStructureSummary(marketIndex)} ${buildPriceVolumeSummary(priceVolume)} 指数页不使用个股资金面和融资余额，当前以大盘自身K线结构做专门裁决。`.trim(),
+      };
+    }
+
+    function buildMarketIndexStructureSummary(marketIndex) {
+      if (!marketIndex) {
+        return '大盘结构层暂未加载。';
+      }
+      return marketIndex.summary || `大盘结构 ${marketIndex.signalLabel || '大盘震荡'}，评分 ${marketIndex.score || 50}/100。`;
+    }
+
+    function buildMarketIndexRiskSummary(marketIndex) {
+      if (!marketIndex || !marketIndex.metrics) {
+        return '波动风险样本暂未加载。';
+      }
+      const volatility = marketIndex.metrics.volatility20;
+      const position = marketIndex.metrics.closePosition20;
+      return `近20日平均单日波动 ${formatPercent(volatility)}，收盘位于近20日区间 ${formatPercent(position)} 位置。`;
     }
 
     function signalBias(signal) {
@@ -2724,11 +2931,11 @@
       document.getElementById('confidence-bar').style.width = `${Math.max(0, Math.min(100, (analysis.confidence || 0) * 100))}%`;
     }
 
-    function renderScenarioList(scenarios, lastClose) {
+    function renderScenarioList(scenarios, lastClose, isIndex = false) {
       const items = [
-        buildScenarioMarkup('看涨情景', 'bullish', scenarios.bullish, lastClose),
-        buildScenarioMarkup('基准情景', 'neutral', scenarios.base, lastClose),
-        buildScenarioMarkup('看跌情景', 'bearish', scenarios.bearish, lastClose),
+        buildScenarioMarkup(isIndex ? '大盘上行情景' : '看涨情景', 'bullish', scenarios.bullish, lastClose),
+        buildScenarioMarkup(isIndex ? '大盘中性情景' : '基准情景', 'neutral', scenarios.base, lastClose),
+        buildScenarioMarkup(isIndex ? '大盘回撤情景' : '看跌情景', 'bearish', scenarios.bearish, lastClose),
       ];
       document.getElementById('scenario-list').innerHTML = items.join('');
     }
@@ -2903,7 +3110,7 @@
         animation: false,
         backgroundColor: 'transparent',
         title: {
-          text: '先完成登录并输入股票代码，再生成未来一周预测图',
+          text: '先完成登录并选择指数或股票，再生成未来一周预测图',
           left: 'center',
           top: 'center',
           textStyle: { color: '#64748b', fontSize: 18, fontWeight: 500 },
@@ -2919,6 +3126,20 @@
         return '--';
       }
       return `${compactFormatter.format(Number(value))} 元`;
+    }
+
+    function compactNumber(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      return compactFormatter.format(Number(value));
+    }
+
+    function formatRatio(value) {
+      if (value == null || Number.isNaN(Number(value))) {
+        return '--';
+      }
+      return `${Number(value).toFixed(2)} 倍`;
     }
 
     function formatSignedMoney(value) {
@@ -3171,18 +3392,24 @@
         : sync.warning
           ? '同步阶段出现异常，当前结论基于本地缓存生成。'
           : '本次直接基于现有缓存生成结论。';
+      if (isMarketIndexData(data)) {
+        const label = getInstrumentDisplayName(data);
+        const marketSummary = analysis.marketIndex && analysis.marketIndex.summary ? ` ${analysis.marketIndex.summary}` : '';
+        return `截至 ${lastDate}，模型对${label}未来 ${analysis.horizon} 个交易日给出 ${analysis.signalLabel} 判断。${analysis.pathCount} 条采样路径中有 ${upsideCount} 条终点高于最新点位，均值终点预计为 ${formatPrice(analysis.meanProjectedClose)}，对应 ${formatSignedPercent(analysis.meanProjectedReturn)}。${syncClause}${marketSummary}`;
+      }
       return `截至 ${lastDate}，模型对未来 ${analysis.horizon} 个交易日给出 ${analysis.signalLabel} 判断。${analysis.pathCount} 条采样路径中有 ${upsideCount} 条终点高于最新收盘价，均值终点预计为 ${formatPrice(analysis.meanProjectedClose)}，对应 ${formatSignedPercent(analysis.meanProjectedReturn)}。${syncClause}`;
     }
 
     function buildPredictionStatus(data, analysis) {
       const sync = data.sync || {};
+      const label = isMarketIndexData(data) ? getInstrumentDisplayName(data) : data.symbol;
       if (sync.updated) {
-        return `${data.symbol} / ${analysis.signalLabel} / 已自动同步 ${sync.provider} ${sync.rows} 条 / lookback ${data.lookback}`;
+        return `${label} / ${analysis.signalLabel} / 已自动同步 ${sync.provider} ${sync.rows} 条 / lookback ${data.lookback}`;
       }
       if (sync.warning) {
-        return `${data.symbol} / ${analysis.signalLabel} / 同步失败，已使用本地缓存 / lookback ${data.lookback}`;
+        return `${label} / ${analysis.signalLabel} / 同步失败，已使用本地缓存 / lookback ${data.lookback}`;
       }
-      return `${data.symbol} / ${analysis.signalLabel} / lookback ${data.lookback}`;
+      return `${label} / ${analysis.signalLabel} / lookback ${data.lookback}`;
     }
 
     function buildSignalCaption(analysis) {

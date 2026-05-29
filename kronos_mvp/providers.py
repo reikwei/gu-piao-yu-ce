@@ -10,6 +10,7 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from .models import Candle
+from .instruments import is_market_index_symbol, market_index_info
 from .storage import normalize_symbol
 
 
@@ -69,6 +70,10 @@ class AkShareDailyProvider:
             import akshare as ak
         except ImportError as exc:
             raise ProviderError("akshare is not installed") from exc
+
+        index_info = market_index_info(symbol)
+        if index_info is not None:
+            return _fetch_akshare_index_daily(ak, index_info.provider_symbol, start_date)
 
         code = normalize_symbol(symbol)
         market = infer_a_share_market(code)
@@ -307,6 +312,8 @@ class BaoStockDailyProvider:
             self._logged_in = False
 
     def fetch_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        if is_market_index_symbol(symbol):
+            raise ProviderError("baostock does not support market index history")
         if infer_a_share_market(symbol) == "bj":
             raise ProviderError("baostock does not support BJ A-share history")
 
@@ -352,6 +359,8 @@ class TuShareDailyProvider:
         self.token = token or os.getenv("TUSHARE_TOKEN")
 
     def fetch_daily(self, symbol: str, start_date: date | None = None) -> list[Candle]:
+        if is_market_index_symbol(symbol):
+            raise ProviderError("tushare daily provider does not support market index history")
         if not self.token:
             raise ProviderError("TUSHARE_TOKEN is not set")
         try:
@@ -426,6 +435,10 @@ def list_a_share_symbols(market: str = "all") -> list[str]:
 
 
 def lookup_a_share_name(symbol: str) -> str | None:
+    index_info = market_index_info(symbol)
+    if index_info is not None:
+        return index_info.name
+
     normalized = normalize_symbol(symbol)
     if not _is_a_share_symbol(normalized):
         return None
@@ -584,6 +597,25 @@ def _fetch_akshare_cdr_daily(ak: object, symbol: str, start_date: date | None) -
     if frame.empty:
         return []
     return _build_candles_from_akshare_sina(frame)
+
+
+def _fetch_akshare_index_daily(ak: object, symbol: str, start_date: date | None) -> list[Candle]:
+    try:
+        frame = _call_with_retries(
+            lambda: ak.stock_zh_index_daily_em(
+                symbol=symbol,
+                start_date=_format_compact_date(start_date) or "19900101",
+                end_date="20500101",
+            ),
+            attempts=3,
+        )
+    except Exception as exc:
+        raise ProviderError(str(exc)) from exc
+    if frame is None or frame.empty:
+        if start_date is not None:
+            return []
+        raise ProviderError("akshare returned no index rows")
+    return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
 
 
 def _build_candles_from_akshare_hist(frame) -> list[Candle]:
