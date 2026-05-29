@@ -234,15 +234,57 @@ def _run_sync(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
     symbols = _normalize_symbols(args.symbols)
     if not symbols:
         parser.error("sync requires one or more symbols or --all")
-    _run_symbol_sync(service, symbols, full_refresh=args.full_refresh)
+    _run_symbol_sync(service, symbols, full_refresh=args.full_refresh, max_retries=args.max_retries)
 
 
-def _run_symbol_sync(service: DataSyncService, symbols: list[str], full_refresh: bool = False) -> None:
+def _run_symbol_sync(
+    service: DataSyncService,
+    symbols: list[str],
+    full_refresh: bool = False,
+    max_retries: int = 0,
+) -> None:
     succeeded = 0
     updated = 0
     total_rows = 0
     for symbol in symbols:
-        result = service.sync_symbol(symbol, full_refresh=full_refresh)
+        attempt = 1
+        while True:
+            try:
+                result = service.sync_symbol(symbol, full_refresh=full_refresh)
+                break
+            except Exception as exc:
+                if attempt <= max_retries:
+                    print(
+                        json.dumps(
+                            {
+                                "ok": False,
+                                "symbol": normalize_instrument_symbol(symbol),
+                                "error": str(exc),
+                                "retrying": True,
+                                "attempt": attempt,
+                                "max_retries": max_retries,
+                                "fullRefresh": full_refresh,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    attempt += 1
+                    continue
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "symbol": normalize_instrument_symbol(symbol),
+                            "error": str(exc),
+                            "retrying": False,
+                            "attempt": attempt,
+                            "max_retries": max_retries,
+                            "fullRefresh": full_refresh,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                raise
         succeeded += 1
         updated += int(result.rows > 0)
         total_rows += result.rows

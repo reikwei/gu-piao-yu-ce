@@ -252,6 +252,41 @@ class CliTests(unittest.TestCase):
         sync_service.sync_symbol.assert_called_once_with("600519", full_refresh=True)
         self.assertIn('"fullRefresh": true', stdout.getvalue())
 
+    def test_sync_symbol_retries_transient_failure(self):
+        sync_service = Mock()
+        sync_service.sync_symbol.side_effect = [
+            RuntimeError("temporary disconnect"),
+            SyncResult(symbol="sh000001", provider="akshare", rows=100),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "sys.argv",
+            [
+                "prog",
+                "--db",
+                str(Path(tmp) / "candles.db"),
+                "sync",
+                "sh000001",
+                "--max-retries",
+                "2",
+            ],
+        ), patch("kronos_mvp.cli.CandleStore"), patch(
+            "kronos_mvp.cli.build_default_providers", return_value=[]
+        ), patch(
+            "kronos_mvp.cli.DataSyncService", return_value=sync_service
+        ), redirect_stdout(io.StringIO()) as stdout:
+            main()
+
+        self.assertEqual(
+            sync_service.sync_symbol.call_args_list,
+            [call("sh000001", full_refresh=False), call("sh000001", full_refresh=False)],
+        )
+        output = stdout.getvalue()
+        self.assertIn('"retrying": true', output)
+        self.assertIn('"attempt": 1', output)
+        self.assertIn('"max_retries": 2', output)
+        self.assertIn('"succeeded": 1', output)
+
     def test_serve_uses_api_factory(self):
         fake_uvicorn = Mock()
 

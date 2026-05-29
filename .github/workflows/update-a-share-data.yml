@@ -459,7 +459,7 @@ jobs:
           if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
             FULL_REFRESH_FLAG="--full-refresh"
           fi
-          python -m kronos_mvp.cli sync sh000001 ${FULL_REFRESH_FLAG}
+          python -m kronos_mvp.cli sync sh000001 --max-retries 5 ${FULL_REFRESH_FLAG}
       - name: Upload merged SQLite cache artifact
         if: always()
         uses: actions/upload-artifact@v4
