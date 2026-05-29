@@ -133,6 +133,44 @@ class ProviderDailyFetchTests(unittest.TestCase):
         self.assertEqual(result[0].date, date(2026, 5, 23))
         self.assertEqual(result[0].close, 3235.0)
 
+    def test_akshare_daily_fetch_falls_back_to_sina_index_history(self):
+        calls = []
+
+        def stock_zh_index_daily_em(symbol, start_date, end_date):
+            calls.append(("eastmoney", symbol, start_date, end_date))
+            raise ConnectionError("remote closed")
+
+        def stock_zh_index_daily(symbol):
+            calls.append(("sina", symbol))
+            return pd.DataFrame(
+                {
+                    "date": ["2026-05-22", "2026-05-23"],
+                    "open": [3200.0, 3210.0],
+                    "high": [3230.0, 3240.0],
+                    "low": [3190.0, 3205.0],
+                    "close": [3220.0, 3235.0],
+                    "volume": [1000000, 1100000],
+                }
+            )
+
+        fake_ak = SimpleNamespace(stock_zh_index_daily_em=stock_zh_index_daily_em, stock_zh_index_daily=stock_zh_index_daily)
+
+        with patch.dict("sys.modules", {"akshare": fake_ak}):
+            result = AkShareDailyProvider().fetch_daily("sh000001", start_date=date(2026, 5, 23))
+
+        self.assertEqual(
+            calls,
+            [
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("eastmoney", "sh000001", "20260523", "20500101"),
+                ("sina", "sh000001"),
+            ],
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].date, date(2026, 5, 23))
+        self.assertEqual(result[0].close, 3235.0)
+
     def test_akshare_cdr_daily_fetch_uses_cdr_source_for_689_symbols(self):
         cdr_calls = []
 

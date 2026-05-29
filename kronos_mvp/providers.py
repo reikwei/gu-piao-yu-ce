@@ -135,24 +135,7 @@ class AkShareRelativeStrengthProvider:
             import akshare as ak
         except ImportError as exc:
             raise ProviderError("akshare is not installed") from exc
-
-        try:
-            frame = _call_with_retries(
-                lambda: ak.stock_zh_index_daily_em(
-                    symbol=symbol,
-                    start_date=_format_compact_date(start_date) or "19900101",
-                    end_date="20500101",
-                ),
-                attempts=3,
-            )
-        except Exception as exc:
-            raise ProviderError(str(exc)) from exc
-
-        if frame is None or frame.empty:
-            if start_date is not None:
-                return []
-            raise ProviderError("akshare returned no index rows")
-        return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+        return _fetch_akshare_index_daily(ak, symbol, start_date)
 
     def fetch_industry_mappings(self) -> list[RelativeIndustryMapping]:
         try:
@@ -600,6 +583,7 @@ def _fetch_akshare_cdr_daily(ak: object, symbol: str, start_date: date | None) -
 
 
 def _fetch_akshare_index_daily(ak: object, symbol: str, start_date: date | None) -> list[Candle]:
+    errors: list[str] = []
     try:
         frame = _call_with_retries(
             lambda: ak.stock_zh_index_daily_em(
@@ -610,12 +594,24 @@ def _fetch_akshare_index_daily(ak: object, symbol: str, start_date: date | None)
             attempts=3,
         )
     except Exception as exc:
-        raise ProviderError(str(exc)) from exc
-    if frame is None or frame.empty:
-        if start_date is not None:
-            return []
-        raise ProviderError("akshare returned no index rows")
-    return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+        errors.append(f"eastmoney: {exc}")
+    else:
+        if frame is not None and not frame.empty:
+            return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+        errors.append("eastmoney: returned no index rows")
+
+    try:
+        frame = _call_with_retries(lambda: ak.stock_zh_index_daily(symbol=symbol), attempts=3)
+    except Exception as exc:
+        errors.append(f"sina: {exc}")
+    else:
+        if frame is not None and not frame.empty:
+            return _build_candles_from_akshare_ohlc(frame, start_date=start_date)
+        errors.append("sina: returned no index rows")
+
+    if start_date is not None and any("returned no index rows" in error for error in errors):
+        return []
+    raise ProviderError("; ".join(errors) if errors else "akshare returned no index rows")
 
 
 def _build_candles_from_akshare_hist(frame) -> list[Candle]:
